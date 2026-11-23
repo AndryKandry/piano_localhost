@@ -11,9 +11,11 @@
     "smoke:import": "mkdir -p node_modules/.cache && rolldown scripts/smoke-import.ts --file node_modules/.cache/smoke-import.mjs --format esm --platform node && node node_modules/.cache/smoke-import.mjs",
     "smoke:player": "mkdir -p node_modules/.cache && rolldown scripts/smoke-player.ts --file node_modules/.cache/smoke-player.mjs --format esm --platform node && node node_modules/.cache/smoke-player.mjs",
     "smoke:ui": "mkdir -p node_modules/.cache && rolldown scripts/smoke-ui.ts --file node_modules/.cache/smoke-ui.mjs --format esm --platform node && node node_modules/.cache/smoke-ui.mjs",
-    "smoke:mapping": "mkdir -p node_modules/.cache && rolldown scripts/smoke-mapping.ts --file node_modules/.cache/smoke-mapping.mjs --format esm --platform node && node node_modules/.cache/smoke-mapping.mjs"
+    "smoke:mapping": "mkdir -p node_modules/.cache && rolldown scripts/smoke-mapping.ts --file node_modules/.cache/smoke-mapping.mjs --format esm --platform node && node node_modules/.cache/smoke-mapping.mjs",
+    "smoke:notation": "mkdir -p node_modules/.cache && rolldown scripts/smoke-notation.ts --file node_modules/.cache/smoke-notation.mjs --format esm --platform node && node node_modules/.cache/smoke-notation.mjs"
   },
   "dependencies": {
+    "@fontsource/bravura": "^5.3.0",
     "@tonejs/midi": "^2.0.28",
     "smplr": "^1.2.0"
   },
