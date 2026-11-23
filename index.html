@@ -71,6 +71,9 @@
       #hudLoad.loading {
         color: var(--accent);
       }
+      #hudWait.on {
+        color: var(--accent);
+      }
       #hudLoad.ready {
         color: var(--ok);
       }
@@ -110,7 +113,13 @@
     <header id="hud">
       <span>Пресет: <b id="hudPreset">Фортепиано</b></span>
       <span>Диапазон: <b id="hudRange">C4–F5</b></span>
-      <span><b>Z</b>/<b>X</b> — октава · <b>Space</b> — педаль · <b>1–4</b> — пресет</span>
+      <span>Режим: <b id="hudMode">свободная игра</b></span>
+      <span>Партия: <b id="hudHand">обе</b></span>
+      <span>Скорость: <b id="hudSpeed">×1.00</b></span>
+      <span id="hudWait">Wait-mode: выкл</span>
+      <span>Время: <b id="hudSong">0:00</b></span>
+      <span>Счёт: <b id="hudScore">—</b></span>
+      <span><b>Z</b>/<b>X</b> — октава · <b>Space</b> — педаль · <b>1–4</b> — пресет · <b>`</b> — wait-mode · <b>+/-</b> — скорость · <b>F2</b> — партия · <b>F3</b> — режим</span>
       <span id="hudLoad"></span>
       <span id="hudAttribution">Сэмплы фортепиано: Splendid Grand Piano (public domain)</span>
     </header>

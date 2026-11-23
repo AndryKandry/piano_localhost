@@ -5,14 +5,19 @@
  */
 import type { KeyboardLayout } from "../core/layout";
 import { pitchName } from "../core/layout";
+import { HIGHLIGHT_NEXT_COLOR } from "./colors";
 
 export interface KeyboardRenderState {
-  /** Зажатые сейчас питчи — яркая подсветка («жму-сейчас»). */
+  /** Зажатые сейчас питчи — яркая подсветка («нажато-мной»). */
   pressed: ReadonlySet<number>;
   /** Подпись физической клавиши по питчу (из маппинга). */
   labelByPitch: ReadonlyMap<number, string>;
   /** Имена нот на клавишах (настройка SPEC 4.8, по умолчанию вкл). */
   showNoteNames: boolean;
+  /** «Жми-сейчас» — яркая подсветка ожидаемых клавиш (инвариант GLOSSARY #5). */
+  next?: ReadonlySet<number>;
+  /** Автопартия — мягкая подсветка звучащих сейчас нот: питч → цвет партии. */
+  auto?: ReadonlyMap<number, string>;
 }
 
 const COLORS = {
@@ -82,7 +87,46 @@ export class KeyboardRenderer {
       ctx.lineWidth = 1;
       ctx.strokeRect(key.x + 0.5, key.y + 0.5, key.width - 1, key.height - 1);
     }
-    // Подписи белых: физическая клавиша + имя ноты.
+
+    // Чёрные клавиши.
+    for (const key of layout.keys) {
+      if (!key.isBlack) continue;
+      const pressed = state.pressed.has(key.pitch);
+      ctx.fillStyle = pressed ? COLORS.blackKeyPressed : COLORS.blackKey;
+      ctx.fillRect(key.x, key.y, key.width, key.height);
+      ctx.strokeStyle = COLORS.blackBorder;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(key.x + 0.5, key.y + 0.5, key.width - 1, key.height - 1);
+    }
+
+    // Мягкая подсветка автопартии (SPEC §4.1): полупрозрачный цвет партии.
+    if (state.auto) {
+      for (const [pitch, color] of state.auto) {
+        const key = layout.byPitch.get(pitch);
+        if (!key) continue;
+        ctx.globalAlpha = key.isBlack ? 0.5 : 0.4;
+        ctx.fillStyle = color;
+        ctx.fillRect(key.x, key.y, key.width, key.height);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Яркая подсветка «жми-сейчас» (инвариант #5): заливка + рамка.
+    if (state.next) {
+      for (const pitch of state.next) {
+        const key = layout.byPitch.get(pitch);
+        if (!key) continue;
+        ctx.globalAlpha = key.isBlack ? 0.65 : 0.55;
+        ctx.fillStyle = HIGHLIGHT_NEXT_COLOR;
+        ctx.fillRect(key.x, key.y, key.width, key.height);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = HIGHLIGHT_NEXT_COLOR;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(key.x + 1, key.y + 1, key.width - 2, key.height - 2);
+      }
+    }
+
+    // Подписи — поверх подсветки: физическая клавиша + имя ноты.
     for (const key of layout.keys) {
       if (key.isBlack) continue;
       this.drawKeyLabels(key, state, {
@@ -94,16 +138,8 @@ export class KeyboardRenderer {
         nameBaseline: layout.height - 9,
       });
     }
-
-    // Чёрные клавиши.
     for (const key of layout.keys) {
       if (!key.isBlack) continue;
-      const pressed = state.pressed.has(key.pitch);
-      ctx.fillStyle = pressed ? COLORS.blackKeyPressed : COLORS.blackKey;
-      ctx.fillRect(key.x, key.y, key.width, key.height);
-      ctx.strokeStyle = COLORS.blackBorder;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(key.x + 0.5, key.y + 0.5, key.width - 1, key.height - 1);
       this.drawKeyLabels(key, state, {
         labelColor: COLORS.blackLabel,
         nameColor: COLORS.blackNoteName,

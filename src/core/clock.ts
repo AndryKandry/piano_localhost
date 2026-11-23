@@ -2,7 +2,16 @@
  * Аудио-часы — единственный источник истины о времени во время игры
  * (инвариант GLOSSARY #2, ADR-002). Не Date.now(), не performance.now().
  */
-export class AudioClock {
+
+/**
+ * Узкий интерфейс времени: плеер и планировщик зависят только от него,
+ * а не от AudioContext — smoke-проверки подменяют его фиктивными часами.
+ */
+export interface TimeSource {
+  currentTime(): number;
+}
+
+export class AudioClock implements TimeSource {
   private ctx: AudioContext | null = null;
 
   /** Создаёт AudioContext. Безопасно звать до первого жеста: контекст стартует suspended. */
