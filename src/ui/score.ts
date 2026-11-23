@@ -9,6 +9,8 @@ import { el, gameButton } from "./dom";
 
 export interface ScoreScreenApi {
   show(result: ScoreResult, melodyTitle: string, onAgain: () => void): void;
+  /** Закрыть экран итогов (например, при повторном запуске мелодии). */
+  close(): void;
 }
 
 export interface ScoreScreenDeps {
@@ -96,7 +98,7 @@ export function initScoreScreen(deps: ScoreScreenDeps): ScoreScreenApi {
     window.addEventListener("keydown", onEscape);
   }
 
-  return { show };
+  return { show, close };
 }
 
 function statTile(label: string, value: string): HTMLElement {

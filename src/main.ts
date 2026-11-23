@@ -198,6 +198,7 @@ const panels = initSidePanel({
 
 /** Клик по карточке библиотеки: копия в плеер, learn-режим, старт (сценарий 3). */
 function playMelody(id: string): void {
+  scoreScreen.close(); // новый запуск закрывает висящий экран итогов прошлой попытки
   let melody: Melody;
   try {
     melody = library.get(id);
@@ -237,14 +238,16 @@ function applyPreset(id: PresetId): void {
 }
 
 // --- Настройки: применяются к рендерам/плееру/движку сразу и при старте ---
-let keyboardStateKey = "";
+// null ≠ любой ключ состояния — первый кадр обязан нарисовать клавиатуру
+// (баг: старт "" совпадал с ключом пустого состояния, рендер пропускался).
+let keyboardStateKey: string | null = null;
 
 function applySettings(): void {
   const current = settings.get();
   engine.setVolume(current.volume);
   player.setHitWindowMs(current.hitWindowMs);
   applyPartyColors(current.partyColors);
-  keyboardStateKey = ""; // подписи/цвета клавиш могли смениться — перерисовать
+  keyboardStateKey = null; // подписи/цвета клавиш могли смениться — перерисовать
 }
 settings.subscribe(applySettings);
 applySettings();
@@ -308,7 +311,11 @@ let layout: KeyboardLayout | null = null;
 
 /** Единая раскладка — геометрия клавиш и колонок нот (ADR-004 п.3). */
 function ensureLayout(): KeyboardLayout {
-  keyboardRenderer.resize();
+  // Пересоздание буфера чистит канвас: раскладка и рисунок клавиш устарели.
+  if (keyboardRenderer.resize()) {
+    layoutDirty = true;
+    keyboardStateKey = null; // форсируем render — иначе клавиатура останется пустой
+  }
   notefield.resize();
   if (layoutDirty || !layout) {
     const { width, height } = keyboardRenderer.size;
