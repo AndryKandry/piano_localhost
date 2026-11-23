@@ -25,9 +25,9 @@ const RIGHT_CHANNEL = 4;
 
 /** Разброс питчей (P90−P10), с которого считаем, что руки вперемешку. */
 const SPLIT_SPREAD_SEMITONES = 24;
-/** Границы разумного порога сплита: C3–C5. */
-const SPLIT_MIN = 48;
-const SPLIT_MAX = 72;
+/** Границы разумного порога сплита: C3–C5 (переиспользуются диалогом сплита). */
+export const SPLIT_MIN = 48;
+export const SPLIT_MAX = 72;
 
 export interface MidiImportOptions {
   /** Заголовок, если в файле имени нет (обычно имя файла без расширения). */

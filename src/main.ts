@@ -1,52 +1,49 @@
 /**
- * Сборка очереди 3: плеер (машина состояний) + lookahead-планировщик +
- * падающие ноты + подсчёт. Сценарии SPEC §3: 3 (wait-mode обучение),
- * 4 (две руки/автопартия), 6 (автоплей), 7 (счёт).
+ * Финальная сборка (очередь 4): игровые канвасы + DOM-панели (библиотека,
+ * загрузка, тембр, настройки), панель управления, диалог «Разбор партий»,
+ * экран итогов, офлайн (service worker, только prod).
+ * Сценарии SPEC §3: 1–8.
  *
- * Один rAF-цикл: читает аудио-часы каждый кадр (инвариант GLOSSARY #2),
- * позиция нот — чистая функция времени (ADR-004 п.2). Нижний канвас
- * перерисовывается по событию — при смене подсветки/нажатий (diff по кадру).
+ * Один rAF-цикл: аудио-часы каждый кадр (инвариант GLOSSARY #2), позиция
+ * нот — чистая функция времени (ADR-004 п.2); нижний канвас — по событию.
  *
- * Хоткеи очереди 3 (Tab не перехватывается — a11y):
- *   ` (Backquote) — wait-mode вкл/выкл;
- *   +/- (Equal/Minus) — множитель скорости ±0.05 (0.25–1.0);
- *   F2 — цикл режима партии (обе → правая → левая);
- *   F3 — цикл режима (свободная → обучение → автоплей).
+ * Хоткеи (дублируют панели; Tab не перехватывается — a11y):
+ *   ` (Backquote) — wait-mode;  +/- (Equal/Minus) — множитель скорости;
+ *   F1 — панель;  F2 — режим партии;  F3 — режим плеера;  1–4 — пресеты.
  */
+import "./style.css";
 import { AudioClock } from "./core/clock";
 import { PitchMapping, rangeLabel } from "./core/mapping";
 import { computeKeyboardLayout, type KeyboardLayout } from "./core/layout";
+import { settings } from "./core/settings";
+import { PRESET_NAMES, PRESET_ORDER } from "./core/presets";
 import { AudioEngine } from "./audio/engine";
 import { KeyboardInput } from "./input/keyboard";
 import { KeyboardRenderer } from "./render/keyboard";
 import { NoteFieldRenderer } from "./render/notefield";
 import { computeKeyHighlight } from "./render/highlight";
+import { applyPartyColors } from "./render/colors";
 import { Player, HAND_MODE_NAMES, PLAYER_MODE_NAMES, type HandMode, type PlayerMode } from "./player/player";
+import type { ScoreResult } from "./player/judge";
 import { library } from "./library/store";
-import type { LoadState, PresetId } from "./core/types";
+import { cloneMelody } from "./library/split";
+import { initControls } from "./ui/controls";
+import { initSidePanel } from "./ui/panels";
+import { initDialogs } from "./ui/dialogs";
+import { initScoreScreen } from "./ui/score";
+import { showToast } from "./ui/toast";
+import { formatDuration, requireEl } from "./ui/dom";
+import type { Melody, LoadState, PresetId } from "./core/types";
 
-const PRESET_ORDER: ReadonlyArray<PresetId> = ["piano", "organ", "synthLead", "bass"];
-const PRESET_NAMES: Record<PresetId, string> = {
-  piano: "Фортепиано",
-  organ: "Орган",
-  synthLead: "Синт-лид",
-  bass: "Бас",
-};
 const PRESET_SHORTCUTS = ["Digit1", "Digit2", "Digit3", "Digit4"] as const;
 const HAND_MODE_CYCLE: readonly HandMode[] = ["both", "right", "left"];
 const MODE_CYCLE: readonly PlayerMode[] = ["free", "learn", "autoplay"];
-
-function requireEl<T extends HTMLElement>(id: string): T {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`Элемент #${id} не найден`);
-  return el as T;
-}
 
 const clock = new AudioClock();
 clock.init();
 clock.attachUnlock();
 
-const engine = new AudioEngine(clock, "piano");
+const engine = new AudioEngine(clock, settings.get().defaultPreset);
 const mapping = new PitchMapping();
 const player = new Player(clock, engine);
 
@@ -87,20 +84,16 @@ function updateLoadHud(state: LoadState, progress: number | null): void {
   }
 }
 
-engine.onLoadState = (_presetId, state, progress) => updateLoadHud(state, progress);
-
-function formatSongTime(sec: number): string {
-  const total = Math.max(0, Math.floor(sec));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
+engine.onLoadState = (presetId, state, progress) => {
+  updateLoadHud(state, progress);
+  if (presetId === engine.preset) panels.setSampleLoad(state, progress);
+};
 
 /** Текстовые состояния HUD — обновляются только при смене (без layout-шума). */
 const hudCache = { song: "", mode: "", hand: "", speed: "", wait: "", score: "" };
 
 function updateHud(): void {
-  const song = formatSongTime(player.songTime());
+  const song = formatDuration(player.songTime());
   if (song !== hudCache.song) {
     hudCache.song = song;
     hudSong.textContent = song;
@@ -126,9 +119,11 @@ function updateHud(): void {
     hudWait.textContent = wait;
     hudWait.classList.toggle("on", player.isWaitMode);
   }
-  const score = player.currentMode === "learn" && player.currentMelody
-    ? `${Math.round(player.score().hitPercent)}% · стрик ${player.score().streak}`
-    : "—";
+  const showScore = settings.get().showScore;
+  const score =
+    showScore && player.currentMode === "learn" && player.currentMelody
+      ? `${Math.round(player.score().hitPercent)}% · стрик ${player.score().streak}`
+      : "—";
   if (score !== hudCache.score) {
     hudCache.score = score;
     hudScore.textContent = score;
@@ -136,15 +131,9 @@ function updateHud(): void {
 }
 
 // --- Клавиатурный ввод ---
-let hintHidden = false;
-
 const input = new KeyboardInput(mapping, {
   onNoteOn: (pitch, velocity) => {
     engine.noteOn(pitch, velocity); // мгновенный звук всегда, включая wait-mode
-    if (!hintHidden) {
-      hintHidden = true;
-      hint.classList.add("hidden");
-    }
     // Пауза (в т.ч. после ухода со вкладки) — любая клавиша продолжает.
     if (!player.isRunning && player.currentMelody && player.currentMode !== "free") player.start();
     player.onKeyPress(pitch);
@@ -167,7 +156,100 @@ window.addEventListener("blur", () => {
   if (player.isRunning) player.pause();
 });
 
-// --- Хоткеи очереди 3 (Tab не трогаем — a11y) ---
+// --- Стартовая подсказка (сценарий 1): до первого жеста (клик/клавиша → clock.resume) ---
+let hintHidden = false;
+function hideStartHint(): void {
+  if (hintHidden) return;
+  hintHidden = true;
+  hint.classList.add("hidden");
+}
+window.addEventListener("keydown", hideStartHint, { once: true });
+window.addEventListener("pointerdown", hideStartHint, { once: true });
+
+// --- Активная мелодия и панели ---
+let activeMelodyId: string | null = null;
+
+const controls = initControls({ player, settings, root: requireEl<HTMLElement>("controls") });
+
+const dialogs = initDialogs({
+  library,
+  root: requireEl<HTMLElement>("dialogRoot"),
+  onApply: (id, melody) => {
+    player.loadMelody(melody); // resplitMelody уже вернул свежую копию с новыми партиями
+    notefield.resetMelodyCache(); // id и число нот те же — кэш держит старые объекты нот
+    activeMelodyId = id;
+    panels.setActiveMelody(id);
+  },
+});
+
+const scoreScreen = initScoreScreen({ root: requireEl<HTMLElement>("dialogRoot") });
+
+const panels = initSidePanel({
+  library,
+  settingsStore: settings,
+  mount: requireEl<HTMLElement>("sidePanel"),
+  dropOverlay: requireEl<HTMLElement>("dropOverlay"),
+  toggleButton: requireEl<HTMLButtonElement>("panelToggle"),
+  onPlay: playMelody,
+  onDelete: deleteMelody,
+  onPreset: applyPreset,
+  onOpenSplit: (id) => dialogs.openSplit(id),
+});
+
+/** Клик по карточке библиотеки: копия в плеер, learn-режим, старт (сценарий 3). */
+function playMelody(id: string): void {
+  let melody: Melody;
+  try {
+    melody = library.get(id);
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error), "error");
+    return;
+  }
+  player.loadMelody(cloneMelody(melody)); // копия: библиотечный оригинал не мутируется
+  player.setMode("learn");
+  player.start();
+  activeMelodyId = id;
+  panels.setActiveMelody(id);
+}
+
+async function deleteMelody(id: string): Promise<void> {
+  const meta = library.list().find((entry) => entry.id === id);
+  if (meta && !window.confirm(`Удалить «${meta.title}» из библиотеки?`)) return;
+  try {
+    await library.remove(id);
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error), "error");
+    return;
+  }
+  if (activeMelodyId === id) {
+    player.unload();
+    player.setMode("free");
+    activeMelodyId = null;
+    panels.setActiveMelody(null);
+  }
+  panels.refreshLibrary();
+}
+
+function applyPreset(id: PresetId): void {
+  engine.setPreset(id); // смена тембра на ходу — сценарий 6/8
+  hudPreset.textContent = PRESET_NAMES[id];
+  panels.setActivePreset(id);
+}
+
+// --- Настройки: применяются к рендерам/плееру/движку сразу и при старте ---
+let keyboardStateKey = "";
+
+function applySettings(): void {
+  const current = settings.get();
+  engine.setVolume(current.volume);
+  player.setHitWindowMs(current.hitWindowMs);
+  applyPartyColors(current.partyColors);
+  keyboardStateKey = ""; // подписи/цвета клавиш могли смениться — перерисовать
+}
+settings.subscribe(applySettings);
+applySettings();
+
+// --- Хоткеи (Tab не трогаем — a11y) ---
 window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   switch (e.code) {
@@ -182,6 +264,10 @@ window.addEventListener("keydown", (e) => {
     case "Minus":
       e.preventDefault();
       player.stepMultiplier(-0.05);
+      break;
+    case "F1":
+      e.preventDefault();
+      panels.toggle();
       break;
     case "F2": {
       e.preventDefault();
@@ -198,14 +284,13 @@ window.addEventListener("keydown", (e) => {
       break;
     }
     default: {
-      // Пресеты — клавишами 1–4 (временная замена панели, очередь 4).
+      // Пресеты — клавишами 1–4 (дубль секции «Тембр»).
       const idx = PRESET_SHORTCUTS.indexOf(e.code as (typeof PRESET_SHORTCUTS)[number]);
       if (idx === -1) return;
-      const preset = PRESET_ORDER[idx];
-      if (!preset) return;
+      const id = PRESET_ORDER[idx];
+      if (!id) return;
       e.preventDefault();
-      engine.setPreset(preset);
-      hudPreset.textContent = PRESET_NAMES[preset];
+      applyPreset(id);
       break;
     }
   }
@@ -233,9 +318,6 @@ function ensureLayout(): KeyboardLayout {
   }
   return layout;
 }
-
-/** Ключ diff-а нижнего канваса: перерисовка только по событию (ADR-004 п.1). */
-let keyboardStateKey = "";
 
 function drawFrame(): void {
   player.update();
@@ -274,53 +356,59 @@ function drawFrame(): void {
     keyboardRenderer.render(currentLayout, {
       pressed,
       labelByPitch: mapping.labels(),
-      showNoteNames: true,
+      showNoteNames: settings.get().showNoteNames,
       next: highlight.next,
       auto: highlight.auto,
     });
   }
 
   updateHud();
+  controls.update();
   requestAnimationFrame(drawFrame);
 }
 
 // Вспышка попадания — на линии удара в колонке ноты.
 player.onNoteHit = (pitch) => notefield.spawnHitFlash(pitch, clock.currentTime());
 
-// Итог прохождения: счёт в HUD + лучшая попытка в библиотеку (SPEC §4.7).
-player.onFinished = (result) => {
+// Итог прохождения (сценарий 7): лучший результат в библиотеку + экран итогов.
+player.onFinished = (result: ScoreResult) => {
   if (player.currentMode !== "learn" || !player.currentMelody) return;
+  const melodyId = player.currentMelody.id;
+  const title = player.currentMelody.title;
   const text = `Пройдено: ${Math.round(result.hitPercent)}% · стрик ${result.bestStreak} · ошибок ${result.errors.length}`;
   hudScore.textContent = text;
   hudCache.score = text;
   try {
     // Вырожденный судья (0 групп — режим переключали после финиша) не пишет счёт.
     if (result.totalGroups > 0) {
-      library.setBest(player.currentMelody.id, Math.round(result.hitPercent * 10) / 10);
+      library.setBest(melodyId, Math.round(result.hitPercent * 10) / 10);
+      panels.refreshLibrary(); // «Лучший: …» в карточке
     }
   } catch (error) {
     console.error("Не удалось записать лучшую попытку", error);
   }
-  console.info(text);
+  if (settings.get().showScore && result.totalGroups > 0) {
+    scoreScreen.show(result, title, () => {
+      player.stop();
+      player.start();
+    });
+  }
 };
 
 // --- Старт ---
-engine.setPreset("piano"); // ленивая загрузка сэмплов с CDN
+applyPreset(engine.preset); // пресет по умолчанию из настроек; сэмплы — лениво с CDN
 updateRangeHud();
-hudPreset.textContent = PRESET_NAMES[engine.preset];
 requestAnimationFrame(drawFrame);
 
-// Сценарий обучения (SPEC §3.3): «Ода к радости», правая рука, wait-mode, ×0.5.
-library.ready().then(() => {
-  try {
-    const melody = library.get("builtin:ode-to-joy");
-    player.loadMelody(melody);
-    player.setMode("learn");
-    player.setHandMode("right");
-    player.setWaitMode(true);
-    player.setMultiplier(0.5);
-    player.start();
-  } catch (error) {
-    console.error("Не удалось загрузить мелодию для обучения", error);
-  }
-});
+// Список библиотеки полный после чтения IndexedDB (пользовательские записи).
+library.ready().then(() => panels.refreshLibrary());
+
+// Офлайн (SPEC §7.6): index+bundle+иконки — service worker (runtime cache-first
+// same-origin); сэмплы CDN не перехватываются — их держит HTTP-кэш браузера.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js").catch((error: unknown) => {
+      console.error("Не удалось зарегистрировать service worker", error);
+    });
+  });
+}

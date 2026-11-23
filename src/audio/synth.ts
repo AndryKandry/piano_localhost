@@ -144,13 +144,18 @@ export class SynthSource implements InstrumentSource {
   private readonly spec: SynthPresetSpec;
   private readonly voices = new Map<number, SynthVoice[]>();
 
-  constructor(presetId: SynthPresetId, private readonly ctx: AudioContext) {
+  constructor(
+    presetId: SynthPresetId,
+    private readonly ctx: AudioContext,
+    /** Выход голосов — мастер-гейн движка (громкость SPEC §4.8). */
+    private readonly destination: AudioNode,
+  ) {
     this.presetId = presetId;
     this.spec = SYNTH_PRESETS[presetId];
   }
 
   noteOn(pitch: number, velocity: number, timeSec: number): void {
-    const voice = new SynthVoice(this.ctx, this.ctx.destination, this.spec, pitch, velocity, timeSec);
+    const voice = new SynthVoice(this.ctx, this.destination, this.spec, pitch, velocity, timeSec);
     const stack = this.voices.get(pitch) ?? [];
     stack.push(voice);
     this.voices.set(pitch, stack);

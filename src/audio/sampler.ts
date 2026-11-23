@@ -23,10 +23,11 @@ export class SamplerSource implements InstrumentSource {
   /** StopFn на каждый запущенный голос, стек по питчу (репичи). */
   private readonly stops = new Map<number, Array<(time?: number) => void>>();
 
-  constructor(ctx: AudioContext, notify: SamplerLoadNotify) {
+  constructor(ctx: AudioContext, notify: SamplerLoadNotify, destination?: AudioNode) {
     const piano = SplendidGrandPiano(ctx, {
       volume: 100,
       decayTime: DECAY_TIME_SEC,
+      destination, // мастер-гейн движка (громкость SPEC §4.8); undefined → ctx.destination
       onLoadProgress: (progress) => {
         if (progress.total > 0) notify("loading", progress.loaded / progress.total);
       },

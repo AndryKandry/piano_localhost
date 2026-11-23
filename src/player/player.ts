@@ -108,6 +108,13 @@ export class Player implements SchedulerHost {
     this.resetRun();
   }
 
+  /** Сброс мелодии (например, её запись удалили из библиотеки). */
+  unload(): void {
+    this.melody = null;
+    this.sortedNotes = [];
+    this.resetRun();
+  }
+
   private resetRun(): void {
     this.running = false;
     this.finished = false;

@@ -104,6 +104,15 @@ export class NoteFieldRenderer {
     this.layout = layout;
   }
 
+  /**
+   * Сбросить кэш нот — после пересборки партий той же мелодии (диалог сплита):
+   * id и число нот не меняются, а объекты нот новые.
+   */
+  resetMelodyCache(): void {
+    this.notesMelodyId = null;
+    this.notes = [];
+  }
+
   /** Полный кадр. */
   draw(frame: NoteFieldFrame): void {
     const { ctx } = this;

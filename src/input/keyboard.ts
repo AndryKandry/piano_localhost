@@ -21,6 +21,19 @@ const PEDAL_CODE = "Space";
 const SHIFT_DOWN_CODE = "KeyZ";
 const SHIFT_UP_CODE = "KeyX";
 
+/**
+ * Фокус в поле ввода (слайдер/список/выбор цвета панели, очередь 4) — игровые
+ * клавиши молчат: ноты не играются, Space не жмёт педаль, preventDefault не
+ * рушит нативное поведение полей. Ключи-события панелей (F1 и т.п.) гейтятся
+ * в своих слушателях.
+ */
+function isTypingTarget(): boolean {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return false;
+  const tag = active.tagName;
+  return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || active.isContentEditable;
+}
+
 export class KeyboardInput {
   /** Реестр зажатых: code → питч, под которым нота была нажата. */
   private readonly pressedCodes = new Map<string, number>();
@@ -67,6 +80,7 @@ export class KeyboardInput {
   }
 
   private readonly handleKeyDown = (e: KeyboardEvent): void => {
+    if (isTypingTarget()) return; // панели: ввод в полях не должен играть ноты
     const code = e.code;
     const ours =
       code === PEDAL_CODE || code === SHIFT_DOWN_CODE || code === SHIFT_UP_CODE || this.mapping.isNoteCode(code);

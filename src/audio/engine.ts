@@ -26,6 +26,8 @@ const SYNTH_PRESET_IDS: ReadonlyArray<Exclude<PresetId, "piano">> = ["organ", "s
 
 export class AudioEngine {
   private readonly clock: AudioClock;
+  /** Мастер-громкость: все источники звучат через него (настройка SPEC §4.8). */
+  private readonly master: GainNode;
   private readonly sources = new Map<PresetId, InstrumentSource>();
   /** Живые голоса: питч → источник, который его звучит. */
   private readonly active = new Map<number, InstrumentSource>();
@@ -40,6 +42,10 @@ export class AudioEngine {
   constructor(clock: AudioClock, defaultPreset: PresetId = "piano") {
     this.clock = clock;
     this.current = defaultPreset;
+    const ctx = clock.context();
+    this.master = ctx.createGain();
+    this.master.gain.value = 1;
+    this.master.connect(ctx.destination);
     // Спека 4.2: уход со вкладки — тишина (keyup не придёт).
     window.addEventListener("blur", () => this.allNotesOff());
   }
@@ -50,6 +56,15 @@ export class AudioEngine {
 
   get pedalActive(): boolean {
     return this.pedalDown;
+  }
+
+  /** Громкость мастера 0–1 (настройка «Громкость»); плавный рамп без щелчка. */
+  setVolume(volume: number): void {
+    const clamped = Math.min(1, Math.max(0, volume));
+    const now = this.clock.currentTime();
+    const param = this.master.gain;
+    param.cancelScheduledValues(now);
+    param.setTargetAtTime(clamped, now, 0.015);
   }
 
   /**
@@ -132,10 +147,14 @@ export class AudioEngine {
 
   private createSource(id: PresetId): InstrumentSource {
     if (id === "piano") {
-      return new SamplerSource(this.clock.context(), (state, progress) => this.onLoadState?.(id, state, progress));
+      return new SamplerSource(
+        this.clock.context(),
+        (state, progress) => this.onLoadState?.(id, state, progress),
+        this.master,
+      );
     }
     if (SYNTH_PRESET_IDS.includes(id as Exclude<PresetId, "piano">)) {
-      return new SynthSource(id as Exclude<PresetId, "piano">, this.clock.context());
+      return new SynthSource(id as Exclude<PresetId, "piano">, this.clock.context(), this.master);
     }
     throw new Error(`Неизвестный пресет: ${id}`);
   }

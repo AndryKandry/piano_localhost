@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "smoke:import": "mkdir -p node_modules/.cache && rolldown scripts/smoke-import.ts --file node_modules/.cache/smoke-import.mjs --format esm --platform node && node node_modules/.cache/smoke-import.mjs",
-    "smoke:player": "mkdir -p node_modules/.cache && rolldown scripts/smoke-player.ts --file node_modules/.cache/smoke-player.mjs --format esm --platform node && node node_modules/.cache/smoke-player.mjs"
+    "smoke:player": "mkdir -p node_modules/.cache && rolldown scripts/smoke-player.ts --file node_modules/.cache/smoke-player.mjs --format esm --platform node && node node_modules/.cache/smoke-player.mjs",
+    "smoke:ui": "mkdir -p node_modules/.cache && rolldown scripts/smoke-ui.ts --file node_modules/.cache/smoke-ui.mjs --format esm --platform node && node node_modules/.cache/smoke-ui.mjs"
   },
   "dependencies": {
     "@tonejs/midi": "^2.0.28",
