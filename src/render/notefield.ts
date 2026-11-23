@@ -5,15 +5,16 @@
  * колонка всегда над своей экранной клавишей. Позиция ноты — чистая функция
  * songTime (ADR-004 п.2): y(t) = y_линии − (t_ноты − songTime) × скорость.
  *
- * Ноты вне маппинга (инвариант GLOSSARY #4) видны в крайних колонках с
- * маркером-стрелкой октавного сдвига (Z — ниже диапазона, X — выше).
+ * Ноты вне маппинга НЕ рисуются (ADR-006 п.6): ни крайних колонок, ни
+ * стрелок сдвига — колонка есть только у нот из раскладки. Автопартия вне
+ * охвата звучит, но на поле не отображается; текущий диапазон показывает HUD.
  *
  * Вспышки попадания живут по аудио-часам (инвариант #2), очищаются по
  * истечении жизни; массив ограничен MAX_PARTICLES. Ноты вне экрана не
  * рисуются: отбор окном видимости + бинарный поиск (research 04 Q2).
  */
 import type { KeyboardLayout } from "../core/layout";
-import type { MappingRange, Melody, Note } from "../core/types";
+import type { Melody, Note } from "../core/types";
 import { HIT_FLASH_COLOR, PARTY_COLORS } from "./colors";
 
 /** Скорость падения, CSS-пикс/сек — высота ноты ∝ длительности (задание Q3). */
@@ -31,7 +32,6 @@ const MIN_NOTE_HEIGHT_PX = 4;
 const COLORS = {
   background: "#0e1116",
   hitLine: "#3a4356",
-  outOfRangeMark: "#e8ecf4",
 } as const;
 
 export interface NoteFieldFrame {
@@ -41,7 +41,6 @@ export interface NoteFieldFrame {
   /** Позиция песни (чистая функция аудио-часов, из Player.songTime()). */
   songTime: number;
   layout: KeyboardLayout;
-  range: MappingRange;
   /** Аудио-часы сейчас — возраст вспышек. */
   nowSec: number;
 }
@@ -49,11 +48,6 @@ export interface NoteFieldFrame {
 interface Particle {
   pitch: number;
   bornAt: number;
-}
-
-interface Column {
-  x: number;
-  width: number;
 }
 
 export class NoteFieldRenderer {
@@ -150,23 +144,15 @@ export class NoteFieldRenderer {
     const lookback = this.maxNoteSec + 1 / px;
     const upperStart = t + visibleAhead;
 
-    // Крайние колонки для нот вне маппинга (инвариант #4) — кэш на кадр.
-    let leftmost: Column | null = null;
-    let rightmost: Column | null = null;
-    for (const key of frame.layout.keys) {
-      const col = { x: key.x, width: key.width };
-      if (!leftmost || key.x < leftmost.x) leftmost = col;
-      if (!rightmost || key.x + key.width > rightmost.x + rightmost.width) rightmost = col;
-    }
-
     for (let i = lowerBound(this.notes, t - lookback); i < this.notes.length; i += 1) {
       const note = this.notes[i];
       if (!note || note.startTimeSec > upperStart) break;
       const endSec = note.startTimeSec + note.durationSec;
       if (endSec <= t) continue; // уже ушла за линию удара
 
-      const column = this.columnFor(note.pitch, frame, leftmost, rightmost);
-      if (!column) continue;
+      // Вне маппинга (ADR-006 п.6) колонки нет — нота не рисуется вовсе.
+      const key = frame.layout.byPitch.get(note.pitch);
+      if (!key) continue;
 
       // Чистая функция времени (ADR-004 п.2): нижний край = момент ноты.
       const yBottom = Math.min(h, yLine - (note.startTimeSec - t) * px);
@@ -176,42 +162,10 @@ export class NoteFieldRenderer {
       const height = yBottom - yTop;
       if (height < MIN_NOTE_HEIGHT_PX) continue;
 
-      const color = note.handPart === "right" ? PARTY_COLORS.right : PARTY_COLORS.left;
-      const outOfRange = !frame.layout.byPitch.has(note.pitch);
-      ctx.globalAlpha = outOfRange ? 0.65 : 1;
-      ctx.fillStyle = color;
-      roundRect(ctx, column.x + COLUMN_INSET_PX, yTop, Math.max(2, column.width - COLUMN_INSET_PX * 2), height, 3);
+      ctx.fillStyle = note.handPart === "right" ? PARTY_COLORS.right : PARTY_COLORS.left;
+      roundRect(ctx, key.x + COLUMN_INSET_PX, yTop, Math.max(2, key.width - COLUMN_INSET_PX * 2), height, 3);
       ctx.fill();
-      ctx.globalAlpha = 1;
-
-      if (outOfRange) {
-        const below = note.pitch < frame.range.basePitch;
-        this.drawShiftMark(column, yTop, below ? "▼ Z" : "▲ X");
-      }
     }
-  }
-
-  /** Колонка ноты: своя клавиша или крайняя при выходе из диапазона (инвариант #4). */
-  private columnFor(
-    pitch: number,
-    frame: NoteFieldFrame,
-    leftmost: Column | null,
-    rightmost: Column | null,
-  ): Column | null {
-    const key = frame.layout.byPitch.get(pitch);
-    if (key) return { x: key.x, width: key.width };
-    if (pitch < frame.range.basePitch) return leftmost;
-    return rightmost;
-  }
-
-  /** Маркер октавного сдвига: подсказка Z (вниз) / X (вверх). */
-  private drawShiftMark(column: Column, yTop: number, mark: string): void {
-    const { ctx } = this;
-    ctx.fillStyle = COLORS.outOfRangeMark;
-    ctx.font = "700 11px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(mark, column.x + column.width / 2, Math.max(12, yTop - 4));
   }
 
   /** Вспышка попадания: рождается на линии удара в колонке ноты. */
@@ -230,8 +184,8 @@ export class NoteFieldRenderer {
         this.particles.splice(i, 1); // очистка по истечении жизни
         continue;
       }
-      const key = this.layout?.byPitch.get(particle.pitch) ?? this.leftmostColumn(frame);
-      if (!key) continue;
+      const key = this.layout?.byPitch.get(particle.pitch);
+      if (!key) continue; // питч вне раскладки (сменился сдвиг октавы) — не рисуем
       const k = age / FLASH_LIFETIME_SEC;
       const cx = key.x + key.width / 2;
       ctx.globalAlpha = (1 - k) * 0.9;
@@ -242,14 +196,6 @@ export class NoteFieldRenderer {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
-  }
-
-  private leftmostColumn(frame: NoteFieldFrame): Column | null {
-    let found: Column | null = null;
-    for (const key of frame.layout.keys) {
-      if (!found || key.x < found.x) found = { x: key.x, width: key.width };
-    }
-    return found;
   }
 }
 

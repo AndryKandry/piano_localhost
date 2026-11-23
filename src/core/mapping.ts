@@ -3,30 +3,71 @@
  * (инвариант GLOSSARY #3, SPEC §5). Связка «нота ↔ экранная клавиша ↔
  * физическая клавиша» всегда считается здесь, через текущий октавный сдвиг.
  *
- * База: белые A S D F G H J K L ; '  ·  чёрные W E T Y U O P (стандарт DAW).
- * Питчи раскладываются последовательно от C4 (MIDI 60): 11 белых клавиш
- * дают C4–F5, 7 чёрных — C#4–D#5. (В SPEC/GLOSSARY диапазон подписан
- * «C4–E5», но перечислено 11 белых клавиш; источником истины принят список
- * клавиш — расхождение помечено для правки доков.)
+ * База v2 (ADR-006): 2 полные октавы C4–B5, 24 ноты, хроматический ряд
+ * «как Virtual Piano». Белые — `` ` Q W E R T Y U I O P [ ] \ `` слева
+ * направо, чёрные — `1 2 4 5 6 8 9 − = Del` (цифровой ряд; 3 и 7 пропущены —
+ * между E–F и B–C чёрных нет). Tab — НЕ нота: перехват ломает
+ * фокус-навигацию (a11y); C4 живёт на Backquote — соседняя позиция.
  *
  * Резолв по `event.code` — работает при любой раскладке ОС (инвариант #1).
  */
 import type { MappingRange } from "./types";
 import { isBlackPitch, pitchName } from "./layout";
 
-const WHITE_CODES = ["KeyA", "KeyS", "KeyD", "KeyF", "KeyG", "KeyH", "KeyJ", "KeyK", "KeyL", "Semicolon", "Quote"] as const;
-const BLACK_CODES = ["KeyW", "KeyE", "KeyT", "KeyY", "KeyU", "KeyO", "KeyP"] as const;
+const WHITE_CODES = [
+  "Backquote",
+  "KeyQ",
+  "KeyW",
+  "KeyE",
+  "KeyR",
+  "KeyT",
+  "KeyY",
+  "KeyU",
+  "KeyI",
+  "KeyO",
+  "KeyP",
+  "BracketLeft",
+  "BracketRight",
+  "Backslash",
+] as const;
+const BLACK_CODES = [
+  "Digit1",
+  "Digit2",
+  "Digit4",
+  "Digit5",
+  "Digit6",
+  "Digit8",
+  "Digit9",
+  "Minus",
+  "Equal",
+  "Backspace",
+] as const;
 
 /** База маппинга — C4 (GLOSSARY: C4 = MIDI 60). */
 const BASE_PITCH = 60;
 const MIDI_MIN = 0;
 const MIDI_MAX = 127;
 
-/** Подпись физической клавиши для экранной клавиши («A», «;», «'»). */
+/** Подпись физической клавиши для экранной клавиши (ADR-006: «`», «[», «−», «Del»…). */
 export function codeLabel(code: string): string {
-  if (code === "Semicolon") return ";";
-  if (code === "Quote") return "'";
+  switch (code) {
+    case "Backquote":
+      return "`";
+    case "BracketLeft":
+      return "[";
+    case "BracketRight":
+      return "]";
+    case "Backslash":
+      return "\\";
+    case "Minus":
+      return "−"; // типографский минус — как на легенде хоткеев
+    case "Equal":
+      return "=";
+    case "Backspace":
+      return "Del";
+  }
   if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
   return code;
 }
 

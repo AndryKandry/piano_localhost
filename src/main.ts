@@ -7,16 +7,19 @@
  * Один rAF-цикл: аудио-часы каждый кадр (инвариант GLOSSARY #2), позиция
  * нот — чистая функция времени (ADR-004 п.2); нижний канвас — по событию.
  *
- * Хоткеи (дублируют панели; Tab не перехватывается — a11y):
- *   ` (Backquote) — wait-mode;  +/- (Equal/Minus) — множитель скорости;
- *   F1 — панель;  F2 — режим партии;  F3 — режим плеера;  1–4 — пресеты.
+ * Хоткеи (дублируют панели; Tab не перехватывается — a11y, ADR-006):
+ *   F4 — wait-mode;  ↑/↓ (Arrow) — множитель скорости;
+ *   F1 — панель;  F2 — режим партии;  F3 — режим плеера.
+ * Пресеты (тембр) — только кнопками панели: цифры теперь чёрные ноты (ADR-006).
+ * Скорость убрана с +/-: Minus/Equal стали нотами F#5/G#5 (конфликт решён
+ * переносом на стрелки — они не ноты и не заняты a11y).
  */
 import "./style.css";
 import { AudioClock } from "./core/clock";
 import { PitchMapping, rangeLabel } from "./core/mapping";
 import { computeKeyboardLayout, type KeyboardLayout } from "./core/layout";
 import { settings } from "./core/settings";
-import { PRESET_NAMES, PRESET_ORDER } from "./core/presets";
+import { PRESET_NAMES } from "./core/presets";
 import { AudioEngine } from "./audio/engine";
 import { KeyboardInput } from "./input/keyboard";
 import { KeyboardRenderer } from "./render/keyboard";
@@ -35,7 +38,6 @@ import { showToast } from "./ui/toast";
 import { formatDuration, requireEl } from "./ui/dom";
 import type { Melody, LoadState, PresetId } from "./core/types";
 
-const PRESET_SHORTCUTS = ["Digit1", "Digit2", "Digit3", "Digit4"] as const;
 const HAND_MODE_CYCLE: readonly HandMode[] = ["both", "right", "left"];
 const MODE_CYCLE: readonly PlayerMode[] = ["free", "learn", "autoplay"];
 
@@ -256,15 +258,15 @@ applySettings();
 window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   switch (e.code) {
-    case "Backquote":
+    case "F4":
       e.preventDefault();
       player.setWaitMode(!player.isWaitMode);
       break;
-    case "Equal":
+    case "ArrowUp":
       e.preventDefault();
       player.stepMultiplier(0.05);
       break;
-    case "Minus":
+    case "ArrowDown":
       e.preventDefault();
       player.stepMultiplier(-0.05);
       break;
@@ -284,16 +286,6 @@ window.addEventListener("keydown", (e) => {
       const order = MODE_CYCLE.indexOf(player.currentMode);
       const next = MODE_CYCLE[(order + 1) % MODE_CYCLE.length] ?? "free";
       player.setMode(next);
-      break;
-    }
-    default: {
-      // Пресеты — клавишами 1–4 (дубль секции «Тембр»).
-      const idx = PRESET_SHORTCUTS.indexOf(e.code as (typeof PRESET_SHORTCUTS)[number]);
-      if (idx === -1) return;
-      const id = PRESET_ORDER[idx];
-      if (!id) return;
-      e.preventDefault();
-      applyPreset(id);
       break;
     }
   }
@@ -338,7 +330,6 @@ function drawFrame(): void {
     showNotes: player.currentMode !== "free" && melody !== null,
     songTime,
     layout: currentLayout,
-    range: mapping.range(),
     nowSec: clock.currentTime(),
   });
 
