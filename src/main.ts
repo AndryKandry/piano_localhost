@@ -8,8 +8,9 @@
  * нот — чистая функция времени (ADR-004 п.2); нижний канвас — по событию.
  *
  * Отсчёт 5→1 перед стартом (без звука): выбор мелодии и «Ещё раз» на экране
- * итогов. Пропуск — клик или Enter (ноты отсчёт не пропускают); при уходе со
- * вкладки остаток замораживается и восстанавливается от аудио-часов.
+ * итогов. Отсчёт неприкасаем — ничего не пропускает и не сбрасывает его
+ * (клики по панели работают спокойно); при уходе со вкладки остаток
+ * замораживается и восстанавливается от аудио-часов.
  *
  * Хоткеи (дублируют панели; Tab не перехватывается — a11y, ADR-006):
  *   F4 — wait-mode;  ↑/↓ (Arrow) — множитель скорости;
@@ -161,8 +162,8 @@ function stopCountdown(): void {
   countdownEl.hidden = true;
 }
 
-/** Отсчёт завершён или пропущен — немедленный старт. */
-function skipCountdown(): void {
+/** Отсчёт завершён — старт. Никаких пропусков: таймер неприкасаем. */
+function finishCountdown(): void {
   stopCountdown();
   player.start();
 }
@@ -175,19 +176,6 @@ function startWithCountdown(): void {
   countdownDigit = 0;
   countdownEl.hidden = false;
 }
-
-// Пропуск отсчёта — клик или Enter (клавиши-ноты отсчёт НЕ пропускают:
-// случайные нажатия не крадут старт, Enter нотой не является). Клик слушаем
-// в capture-фазе: тот клик, что выбрал мелодию, до окна уже не доходит в
-// bubble — и не «пропустит» только что начатый отсчёт; любой следующий — да.
-window.addEventListener("click", () => {
-  if (countdownEnd !== null) skipCountdown();
-}, { capture: true });
-window.addEventListener("keydown", (e) => {
-  if (e.repeat || e.code !== "Enter" || countdownEnd === null) return;
-  e.preventDefault(); // фокус на кнопке — гасим её синтезированный click
-  skipCountdown();
-});
 
 // --- Клавиатурный ввод ---
 const input = new KeyboardInput(mapping, {
@@ -400,7 +388,7 @@ function drawFrame(): void {
   if (countdownEnd !== null) {
     const remain = countdownEnd - clock.currentTime();
     if (remain <= 0) {
-      skipCountdown();
+      finishCountdown();
     } else {
       const digit = Math.ceil(remain);
       if (digit >= 1 && digit !== countdownDigit) {
