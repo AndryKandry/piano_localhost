@@ -22,7 +22,7 @@
           <span id="hudWait">Wait-mode: выкл</span>
           <span>Время: <b id="hudSong">0:00</b></span>
           <span>Счёт: <b id="hudScore">—</b></span>
-          <span class="hud-keys"><b>Z</b>/<b>X</b> — октава · <b>Space</b> — педаль · <b>⌥W</b> — wait-mode · <b>↑/↓</b> — скорость · <b>⌥H</b> — партия · <b>⌥M</b> — режим · <b>⌥P</b> — панель</span>
+          <span class="hud-keys"><b>Z</b>/<b>X</b> — октава · <b>Space</b> — педаль · <b>⌥W</b> — wait-mode · <b>↑/↓</b> — скорость · <b>⌥H</b> — партия · <b>⌥M</b> — режим · <b>⌥P</b> — панель · <b>⌥A</b> — азбука</span>
           <span id="hudLoad"></span>
           <span id="hudAudio" hidden>🔇 Кликни по странице — браузер включает звук только после клика</span>
           <span id="hudAttribution">Сэмплы фортепиано: Splendid Grand Piano (public domain)</span>
@@ -42,6 +42,26 @@
     <div id="dropOverlay"><div id="dropCard">Отпустите файл — добавим в библиотеку<br /><small>.mid или .musicxml</small></div></div>
     <div id="dialogRoot"></div>
     <div id="hint">Жми клавиши — звучит фортепиано</div>
+    <!-- Азбука (SPEC §4.9): полноэкранный раздел обучения нотной грамоте (⌥A) -->
+    <section id="primer" hidden aria-label="Азбука — обучение нотной грамоте">
+      <header class="primer-topbar">
+        <button id="primerBack" type="button" class="btn">← Назад к пианино</button>
+        <h2 class="primer-title">Азбука</h2>
+        <span class="primer-topbar-hint">⌥A — вернуться · ответ — клавишей пианино или кнопкой</span>
+      </header>
+      <div id="primerFontStatus" class="primer-font-status" hidden>Шрифт нот загружается…</div>
+      <div id="primerList" class="primer-list"></div>
+      <div id="primerLesson" class="primer-lesson" hidden>
+        <h3 id="primerLessonTitle" class="primer-lesson-title"></h3>
+        <p id="primerLessonDesc" class="primer-lesson-desc"></p>
+        <canvas id="primerCanvas"></canvas>
+        <p id="primerPrompt" class="primer-prompt"></p>
+        <div id="primerChoices" class="primer-choices"></div>
+        <p id="primerFeedback" class="primer-feedback"></p>
+        <p id="primerScore" class="primer-score"></p>
+        <div id="primerNav" class="primer-nav"></div>
+      </div>
+    </section>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -649,3 +649,157 @@ select {
 .toast.gone {
   opacity: 0;
 }
+
+/* --- Азбука (SPEC §4.9): полноэкранный раздел обучения нотной грамоте --- */
+
+/* Открытая азбука прячет главный экран целиком: шапку с HUD, стейдж,
+   гамбургер панели и подсказку (свой rAF-цикл в main продолжает работать). */
+body.primer-open #app,
+body.primer-open #panelToggle,
+body.primer-open #sidePanel,
+body.primer-open #hint {
+  display: none;
+}
+
+#primer {
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  gap: 12px;
+  background: var(--bg);
+}
+#primer[hidden] {
+  display: none;
+}
+
+.primer-topbar {
+  width: min(760px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.primer-title {
+  margin: 0;
+  font-size: 20px;
+  color: var(--text);
+}
+.primer-topbar-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.primer-font-status {
+  font-size: 12px;
+  color: var(--accent);
+}
+.primer-font-status.error {
+  color: var(--error);
+}
+
+/* Список уроков — карточки в стиле библиотеки (.mel-card) */
+.primer-list {
+  width: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.primer-card .mel-main {
+  padding: 10px 12px 8px;
+}
+.primer-card .mel-meta {
+  gap: 14px;
+}
+.primer-badge-open {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent);
+}
+.primer-badge-done {
+  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
+  color: var(--ok);
+}
+
+/* Экран урока */
+.primer-lesson {
+  width: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.primer-lesson[hidden] {
+  display: none;
+}
+.primer-lesson-title {
+  margin: 0;
+  font-size: 17px;
+  color: var(--text);
+}
+.primer-lesson-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+#primerCanvas {
+  width: 100%;
+  max-width: 720px;
+  height: 240px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.primer-prompt {
+  margin: 4px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+.primer-choices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 560px;
+}
+.primer-choice {
+  font-size: 15px;
+  padding: 8px 18px;
+}
+.primer-keyhint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.primer-feedback {
+  margin: 4px 0 0;
+  min-height: 2.6em;
+  max-width: 640px;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--text);
+}
+.primer-feedback.ok {
+  color: var(--ok);
+}
+.primer-feedback.error {
+  color: var(--error);
+}
+.primer-score {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.primer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  min-height: 30px;
+}

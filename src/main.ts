@@ -14,7 +14,8 @@
  *
  * Хоткеи (дублируют панели; Tab не перехватывается — a11y, ADR-006):
  *   ⌥W — wait-mode;  ⌥P — панель;  ⌥H — режим партии;  ⌥M — режим плеера;
- *   ↑/↓ — множитель скорости.  ⌥ = Option на Mac (в событиях — altKey).
+ *   ⌥A — азбука (SPEC §4.9, вход/выход);  ↑/↓ — множитель скорости.
+ *   ⌥ = Option на Mac (в событиях — altKey).
  * F-ряд не используем (macOS отдаёт его яркости/медиа); ⌥+буква не нота —
  * input гейтит ноты при зажатом Alt. Пресеты — кнопками панели (цифры — ноты).
  */
@@ -38,6 +39,7 @@ import { initControls } from "./ui/controls";
 import { initSidePanel } from "./ui/panels";
 import { initDialogs } from "./ui/dialogs";
 import { initScoreScreen } from "./ui/score";
+import { initPrimerScreen } from "./primer/screen";
 import { showToast } from "./ui/toast";
 import { formatDuration, requireEl } from "./ui/dom";
 import type { Melody, LoadState, PresetId } from "./core/types";
@@ -180,6 +182,12 @@ function startWithCountdown(): void {
 const input = new KeyboardInput(mapping, {
   onNoteOn: (pitch, velocity) => {
     engine.noteOn(pitch, velocity); // мгновенный звук всегда, включая wait-mode
+    // Азбука (SPEC §4.9): клавиатура продолжает играть звук и судит ответ
+    // карточки; плеер и отсчёт в ней не трогаются.
+    if (primerOpen) {
+      primer.handlePitch(pitch);
+      return;
+    }
     // Пауза (в т.ч. после ухода со вкладки) — любая клавиша продолжает.
     // Во время отсчёта ноты старт не крадут: он пропускается кликом/Enter.
     if (countdownEnd === null && !player.isRunning && player.currentMelody && player.currentMode !== "free") player.start();
@@ -265,7 +273,46 @@ const panels = initSidePanel({
   onDelete: deleteMelody,
   onPreset: applyPreset,
   onOpenSplit: (id) => dialogs.openSplit(id),
+  onOpenPrimer: () => setPrimerOpen(true),
 });
+
+// --- Азбука (SPEC §4.9, ⌥A): полноэкранный раздел обучения нотной грамоте ---
+const primer = initPrimerScreen({
+  root: requireEl<HTMLElement>("primer"),
+  canvas: requireEl<HTMLCanvasElement>("primerCanvas"),
+  onBack: () => setPrimerOpen(false),
+});
+primer.setAudio(engine); // показ ноты на карточке звучит тем же движком
+
+let primerOpen = false;
+
+/** Вход/выход из азбуки: главный экран прячется, клавиатура отвечает карточкам. */
+function setPrimerOpen(open: boolean): void {
+  if (open === primerOpen) return;
+  primerOpen = open;
+  document.body.classList.toggle("primer-open", open);
+  if (open) {
+    stopCountdown(); // висящий отсчёт не запустит мелодию под азбукой
+    if (player.isRunning) player.pause(); // мелодия не бежит в азбуке
+    // Карточки отвечаются в базовом диапазоне C4–B5: октавный сдвиг возвращаем.
+    const delta = Math.round((60 - mapping.range().basePitch) / 12);
+    if (delta !== 0) {
+      mapping.shiftOctaves(delta);
+      input.releaseAll();
+      engine.allNotesOff();
+      updateRangeHud();
+      layoutDirty = true;
+      keyboardStateKey = null;
+    }
+    panels.toggle(false);
+    void primer.open();
+  } else {
+    primer.close();
+    // Главный стейдж был display:none — раскладка/буферы устарели, перерисовать.
+    layoutDirty = true;
+    keyboardStateKey = null;
+  }
+}
 
 /** Клик по карточке библиотеки: копия в плеер, learn-режим, старт (сценарий 3). */
 function playMelody(id: string): void {
@@ -352,6 +399,11 @@ window.addEventListener("keydown", (e) => {
       player.setMode(next);
       break;
     }
+    case "KeyA":
+      // Азбука (SPEC §4.9): вход/выход тем же хоткеем.
+      e.preventDefault();
+      setPrimerOpen(!primerOpen);
+      break;
   }
 });
 
@@ -415,43 +467,47 @@ function drawFrame(): void {
 
   player.update();
 
-  const currentLayout = ensureLayout();
-  const melody = player.currentMelody;
-  const songTime = player.songTime();
+  // Азбука открыта — главный стейдж скрыт (display:none): рендер полей
+  // пропускаем (дешёвый вариант — rAF/HUD/контролы живут, канвасы не рисуем).
+  if (!primerOpen) {
+    const currentLayout = ensureLayout();
+    const melody = player.currentMelody;
+    const songTime = player.songTime();
 
-  notefield.draw({
-    melody,
-    showNotes: player.currentMode !== "free" && melody !== null,
-    songTime,
-    layout: currentLayout,
-    nowSec: clock.currentTime(),
-  });
-
-  // Свободная игра — подсветки партий нет (SPEC §4.3: режим без нот).
-  const highlight =
-    melody && player.currentMode !== "free"
-      ? computeKeyHighlight({
-          notes: melody.notes,
-          songTime,
-          isAuto: (note) => !player.isPlayableNote(note),
-          pendingPlayable: player.pendingPlayablePitches(),
-          expectedPitches: player.expectedPitches(),
-          waitMode: player.isWaitMode && player.currentMode === "learn" && player.isRunning,
-          hitWindowSec: player.hitWindowSec,
-        })
-      : { next: new Set<number>(), auto: new Map<number, string>() };
-
-  const pressed = input.pressedPitches();
-  const key = `${[...pressed].sort().join(",")}|${[...highlight.next].sort().join(",")}|${[...highlight.auto.entries()].sort().map(([p, c]) => `${p}:${c}`).join(",")}`;
-  if (key !== keyboardStateKey) {
-    keyboardStateKey = key;
-    keyboardRenderer.render(currentLayout, {
-      pressed,
-      labelByPitch: mapping.labels(),
-      showNoteNames: settings.get().showNoteNames,
-      next: highlight.next,
-      auto: highlight.auto,
+    notefield.draw({
+      melody,
+      showNotes: player.currentMode !== "free" && melody !== null,
+      songTime,
+      layout: currentLayout,
+      nowSec: clock.currentTime(),
     });
+
+    // Свободная игра — подсветки партий нет (SPEC §4.3: режим без нот).
+    const highlight =
+      melody && player.currentMode !== "free"
+        ? computeKeyHighlight({
+            notes: melody.notes,
+            songTime,
+            isAuto: (note) => !player.isPlayableNote(note),
+            pendingPlayable: player.pendingPlayablePitches(),
+            expectedPitches: player.expectedPitches(),
+            waitMode: player.isWaitMode && player.currentMode === "learn" && player.isRunning,
+            hitWindowSec: player.hitWindowSec,
+          })
+        : { next: new Set<number>(), auto: new Map<number, string>() };
+
+    const pressed = input.pressedPitches();
+    const key = `${[...pressed].sort().join(",")}|${[...highlight.next].sort().join(",")}|${[...highlight.auto.entries()].sort().map(([p, c]) => `${p}:${c}`).join(",")}`;
+    if (key !== keyboardStateKey) {
+      keyboardStateKey = key;
+      keyboardRenderer.render(currentLayout, {
+        pressed,
+        labelByPitch: mapping.labels(),
+        showNoteNames: settings.get().showNoteNames,
+        next: highlight.next,
+        auto: highlight.auto,
+      });
+    }
   }
 
   updateHud();

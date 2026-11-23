@@ -12,7 +12,8 @@
     "smoke:player": "mkdir -p node_modules/.cache && rolldown scripts/smoke-player.ts --file node_modules/.cache/smoke-player.mjs --format esm --platform node && node node_modules/.cache/smoke-player.mjs",
     "smoke:ui": "mkdir -p node_modules/.cache && rolldown scripts/smoke-ui.ts --file node_modules/.cache/smoke-ui.mjs --format esm --platform node && node node_modules/.cache/smoke-ui.mjs",
     "smoke:mapping": "mkdir -p node_modules/.cache && rolldown scripts/smoke-mapping.ts --file node_modules/.cache/smoke-mapping.mjs --format esm --platform node && node node_modules/.cache/smoke-mapping.mjs",
-    "smoke:notation": "mkdir -p node_modules/.cache && rolldown scripts/smoke-notation.ts --file node_modules/.cache/smoke-notation.mjs --format esm --platform node && node node_modules/.cache/smoke-notation.mjs"
+    "smoke:notation": "mkdir -p node_modules/.cache && rolldown scripts/smoke-notation.ts --file node_modules/.cache/smoke-notation.mjs --format esm --platform node && node node_modules/.cache/smoke-notation.mjs",
+    "smoke:primer": "mkdir -p node_modules/.cache && rolldown scripts/smoke-primer.ts --file node_modules/.cache/smoke-primer.mjs --format esm --platform node && node node_modules/.cache/smoke-primer.mjs"
   },
   "dependencies": {
     "@fontsource/bravura": "^5.3.0",

@@ -46,6 +46,8 @@ export interface PanelsDeps {
   onPreset(id: PresetId): void;
   /** Открыть диалог «Разбор партий». */
   onOpenSplit(id: string): void;
+  /** Открыть «Азбуку» (SPEC §4.9: вход хоткеем ⌥A или кнопкой в панели). */
+  onOpenPrimer(): void;
 }
 
 export function initSidePanel(deps: PanelsDeps): PanelsApi {
@@ -54,6 +56,13 @@ export function initSidePanel(deps: PanelsDeps): PanelsApi {
 
   const activeCards = new Map<string, HTMLElement>();
   let activeMelodyId: string | null = null;
+
+  // --- Секция «Азбука» (SPEC §4.9) — вход в обучение нотной грамоте ---
+  const primerSection = el("section", "panel-section");
+  primerSection.appendChild(el("h3", "panel-heading", "Азбука"));
+  const primerBtn = gameButton("Открыть азбуку (⌥A)", () => deps.onOpenPrimer());
+  primerBtn.classList.add("wide");
+  primerSection.append(primerBtn, el("p", "panel-hint", "Уроки нотной грамоты: нотный стан, скрипичный ключ, ноты, длительности, паузы, такты."));
 
   // --- Секция «Библиотека» ---
   const librarySection = el("section", "panel-section");
@@ -95,7 +104,7 @@ export function initSidePanel(deps: PanelsDeps): PanelsApi {
   const settingsSection = el("section");
   initSettingsSection(settingsSection, deps.settingsStore);
 
-  mount.append(librarySection, uploadSection, timbreSection, settingsSection);
+  mount.append(primerSection, librarySection, uploadSection, timbreSection, settingsSection);
 
   // --- Гамбургер ---
   toggleButton.classList.add("panel-toggle");
