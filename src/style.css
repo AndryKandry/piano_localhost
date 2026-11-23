@@ -70,6 +70,9 @@ body {
 #hudLoad.error {
   color: var(--error);
 }
+#hudAudio {
+  color: var(--accent);
+}
 #hudWait.on {
   color: var(--accent);
 }

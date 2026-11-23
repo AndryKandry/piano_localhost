@@ -59,6 +59,7 @@ const hudWait = requireEl<HTMLSpanElement>("hudWait");
 const hudSong = requireEl<HTMLSpanElement>("hudSong");
 const hudScore = requireEl<HTMLSpanElement>("hudScore");
 const hudLoad = requireEl<HTMLSpanElement>("hudLoad");
+const hudAudio = requireEl<HTMLSpanElement>("hudAudio");
 const hint = requireEl<HTMLDivElement>("hint");
 
 function updateRangeHud(): void {
@@ -92,7 +93,7 @@ engine.onLoadState = (presetId, state, progress) => {
 };
 
 /** Текстовые состояния HUD — обновляются только при смене (без layout-шума). */
-const hudCache = { song: "", mode: "", hand: "", speed: "", wait: "", score: "" };
+const hudCache = { song: "", mode: "", hand: "", speed: "", wait: "", score: "", audio: "" };
 
 function updateHud(): void {
   const song = formatDuration(player.songTime());
@@ -129,6 +130,13 @@ function updateHud(): void {
   if (score !== hudCache.score) {
     hudCache.score = score;
     hudScore.textContent = score;
+  }
+  // Autoplay-политика: часть браузеров активирует аудио только кликом
+  // (не клавишей) — честно показываем, почему тишина.
+  const audio = clock.state === "suspended" ? "muted" : "running";
+  if (audio !== hudCache.audio) {
+    hudCache.audio = audio;
+    hudAudio.hidden = audio !== "muted";
   }
 }
 
