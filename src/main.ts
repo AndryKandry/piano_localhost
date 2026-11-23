@@ -13,11 +13,10 @@
  * замораживается и восстанавливается от аудио-часов.
  *
  * Хоткеи (дублируют панели; Tab не перехватывается — a11y, ADR-006):
- *   F4 — wait-mode;  ↑/↓ (Arrow) — множитель скорости;
- *   F1 — панель;  F2 — режим партии;  F3 — режим плеера.
- * Пресеты (тембр) — только кнопками панели: цифры теперь чёрные ноты (ADR-006).
- * Скорость убрана с +/-: Minus/Equal стали нотами F#5/G#5 (конфликт решён
- * переносом на стрелки — они не ноты и не заняты a11y).
+ *   Alt+W — wait-mode;  Alt+P — панель;  Alt+H — режим партии;
+ *   Alt+M — режим плеера;  ↑/↓ — множитель скорости.
+ * F-ряд не используем (macOS отдаёт его яркости/медиа); Alt+буква не нота —
+ * input гейтит ноты при зажатом Alt. Пресеты — кнопками панели (цифры — ноты).
  */
 import "./style.css";
 import { AudioClock } from "./core/clock";
@@ -236,6 +235,13 @@ let activeMelodyId: string | null = null;
 
 const controls = initControls({ player, settings, root: requireEl<HTMLElement>("controls") });
 
+// Кнопка «☰ Панель» — строго под шапкой: строки HUD переносятся при узком
+// окне, поэтому высоту отдаёт ResizeObserver, а не константа.
+const topbar = requireEl<HTMLElement>("topbar");
+const syncHeaderHeight = (): void => document.documentElement.style.setProperty("--header-h", `${topbar.offsetHeight}px`);
+new ResizeObserver(syncHeaderHeight).observe(topbar);
+syncHeaderHeight();
+
 const dialogs = initDialogs({
   library,
   root: requireEl<HTMLElement>("dialogRoot"),
@@ -318,14 +324,41 @@ function applySettings(): void {
 settings.subscribe(applySettings);
 applySettings();
 
-// --- Хоткеи (Tab не трогаем — a11y) ---
+// --- Хоткеи (Tab не трогаем — a11y). F-ряд не используем: macOS отдаёт его
+// яркости/медиа/Mission Control. Alt+буква не конфликтует с нотами:
+// input/keyboard гейтит ноты при зажатом Alt (ADR-006). ---
 window.addEventListener("keydown", (e) => {
-  if (e.repeat) return;
+  if (e.repeat || !e.altKey) return;
   switch (e.code) {
-    case "F4":
+    case "KeyW":
       e.preventDefault();
       player.setWaitMode(!player.isWaitMode);
       break;
+    case "KeyP":
+      e.preventDefault();
+      panels.toggle();
+      break;
+    case "KeyH": {
+      e.preventDefault();
+      const order = HAND_MODE_CYCLE.indexOf(player.handPartyMode);
+      const next = HAND_MODE_CYCLE[(order + 1) % HAND_MODE_CYCLE.length] ?? "both";
+      player.setHandMode(next);
+      break;
+    }
+    case "KeyM": {
+      e.preventDefault();
+      const order = MODE_CYCLE.indexOf(player.currentMode);
+      const next = MODE_CYCLE[(order + 1) % MODE_CYCLE.length] ?? "free";
+      player.setMode(next);
+      break;
+    }
+  }
+});
+
+// Скорость — стрелками (не ноты, без модификаторов).
+window.addEventListener("keydown", (e) => {
+  if (e.repeat || e.altKey) return;
+  switch (e.code) {
     case "ArrowUp":
       e.preventDefault();
       player.stepMultiplier(0.05);
@@ -334,24 +367,6 @@ window.addEventListener("keydown", (e) => {
       e.preventDefault();
       player.stepMultiplier(-0.05);
       break;
-    case "F1":
-      e.preventDefault();
-      panels.toggle();
-      break;
-    case "F2": {
-      e.preventDefault();
-      const order = HAND_MODE_CYCLE.indexOf(player.handPartyMode);
-      const next = HAND_MODE_CYCLE[(order + 1) % HAND_MODE_CYCLE.length] ?? "both";
-      player.setHandMode(next);
-      break;
-    }
-    case "F3": {
-      e.preventDefault();
-      const order = MODE_CYCLE.indexOf(player.currentMode);
-      const next = MODE_CYCLE[(order + 1) % MODE_CYCLE.length] ?? "free";
-      player.setMode(next);
-      break;
-    }
   }
 });
 

@@ -81,6 +81,7 @@ export class KeyboardInput {
 
   private readonly handleKeyDown = (e: KeyboardEvent): void => {
     if (isTypingTarget()) return; // панели: ввод в полях не должен играть ноты
+    if (e.altKey) return; // Alt+буква — хоткеи приложения (ADR-006), не ноты
     const code = e.code;
     const ours =
       code === PEDAL_CODE || code === SHIFT_DOWN_CODE || code === SHIFT_UP_CODE || this.mapping.isNoteCode(code);
