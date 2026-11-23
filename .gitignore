@@ -1,0 +1,8 @@
+# Рабочие артефакты процесса — не коммитить
+dev-report/
+logs/
+tasks/
+work/
+node_modules/
+dist/
+.DS_Store
