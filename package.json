@@ -1,0 +1,19 @@
+{
+  "name": "laptop-piano",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "PIANO — клавиатура ноутбука как фортепиано",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "smplr": "^1.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}

@@ -18,8 +18,9 @@ Research (`docs/research/01-audio-engine.md`).
 2. **Планировщик автоплея/автопартии** — lookahead-паттерн «A Tale of Two
    Clocks» (Chris Wilson): тик ~25 мс, планирование на аудио-часах на ~100 мс
    вперёд. Wait-mode играет по нажатию — без lookahead.
-3. **Сэмплы фортепиано**: Salamander Grand Piano (Alexander Holm, CC-BY-3.0,
-   атрибуция обязательна) — браузерная нарезка ~5.5 МБ MP3.
+3. **Сэмплы фортепиано**: Splendid Grand Piano (public domain) через smplr —
+   нарезка с CDN smplr. Salamander (CC-BY-3.0) отвергнут на практике:
+   в smplr отсутствует (закрыл открытый пункт research 01).
 4. **Загрузчик сэмплов**: smplr — `start/stop(note)` с фейдом, per-note gain.
 5. **Синтезаторные пресеты** — свои голоса на осцилляторах (осц + фильтр +
    ADSR), десятки строк кода, без библиотек.
@@ -40,6 +41,7 @@ Research (`docs/research/01-audio-engine.md`).
   приложения (инвариант GLOSSARY #2): рендер и планирование читают его.
 - Зависимости аудио-слоя минимальны: smplr + сэмплы. Свои пресеты — наш код,
   наше API.
-- Обязательная атрибуция Salamander (CC-BY-3.0) в UI/README.
+- Атрибуция сэмплов в UI (Splendid — public domain, атрибуция — жест
+  вежливости).
 - Точные мс задержки подтвердить замером на целевом MacBook в прототипе
   (research не подтверждает цифры официально).
