@@ -7,12 +7,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:import": "mkdir -p node_modules/.cache && rolldown scripts/smoke-import.ts --file node_modules/.cache/smoke-import.mjs --format esm --platform node && node node_modules/.cache/smoke-import.mjs"
   },
   "dependencies": {
+    "@tonejs/midi": "^2.0.28",
     "smplr": "^1.2.0"
   },
   "devDependencies": {
+    "linkedom": "^0.18.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
   }

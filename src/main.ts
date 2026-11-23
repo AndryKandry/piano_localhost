@@ -9,6 +9,7 @@ import { computeKeyboardLayout } from "./core/layout";
 import { AudioEngine } from "./audio/engine";
 import { KeyboardInput } from "./input/keyboard";
 import { KeyboardRenderer } from "./render/keyboard";
+import { library } from "./library/store";
 import type { LoadState, PresetId } from "./core/types";
 
 const PRESET_ORDER: ReadonlyArray<PresetId> = ["piano", "organ", "synthLead", "bass"];
@@ -136,3 +137,9 @@ engine.setPreset("piano"); // стартует ленивую загрузку �
 updateRangeHud();
 hudPreset.textContent = PRESET_NAMES[engine.preset];
 drawKeyboard();
+
+// Библиотека мелодий (очередь 2): встроенные + пользовательские. Панель
+// библиотеки и плеер (очереди 3–4) потребляют library.list()/get()/addUserFile().
+library.ready().then(() => {
+  console.info(`Библиотека готова: ${library.list().length} мелодий`);
+});
