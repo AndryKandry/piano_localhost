@@ -88,6 +88,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative; /* якорь для #countdown */
 }
 #noteCanvas {
   flex: 7 1 0;
@@ -102,6 +103,35 @@ body {
   width: 100%;
   display: block;
   background: var(--panel);
+}
+
+/* --- Отсчёт перед стартом (5→1, без звука) --- */
+
+#countdown {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 20vh;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--accent);
+  text-shadow: 0 4px 30px color-mix(in srgb, var(--bg) 75%, transparent);
+  opacity: 0.92; /* ноты под цифрой остаются читаемыми */
+  pointer-events: none;
+  z-index: 5;
+}
+/* Лёгкое появление при каждом запуске отсчёта (hidden → показ) */
+#countdown:not([hidden]) {
+  animation: countdown-in 0.3s ease;
+}
+@keyframes countdown-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.92;
+  }
 }
 
 /* --- Подсказка первого жеста (сценарий 1) --- */

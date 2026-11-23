@@ -7,6 +7,10 @@
  * Один rAF-цикл: аудио-часы каждый кадр (инвариант GLOSSARY #2), позиция
  * нот — чистая функция времени (ADR-004 п.2); нижний канвас — по событию.
  *
+ * Отсчёт 5→1 перед стартом (без звука): выбор мелодии и «Ещё раз» на экране
+ * итогов. Пропуск — клик или Enter (ноты отсчёт не пропускают); при уходе со
+ * вкладки остаток замораживается и восстанавливается от аудио-часов.
+ *
  * Хоткеи (дублируют панели; Tab не перехватывается — a11y, ADR-006):
  *   F4 — wait-mode;  ↑/↓ (Arrow) — множитель скорости;
  *   F1 — панель;  F2 — режим партии;  F3 — режим плеера.
@@ -140,12 +144,58 @@ function updateHud(): void {
   }
 }
 
+// --- Отсчёт перед стартом (5→1, без звука): время приготовиться играть ---
+const COUNTDOWN_SEC = 5;
+const countdownEl = requireEl<HTMLDivElement>("countdown");
+/** Аудио-время конца отсчёта; null — отсчёта нет (инвариант #2, не Date.now). */
+let countdownEnd: number | null = null;
+/** Остаток отсчёта, замороженный на время ухода со вкладки (blur). */
+let countdownRemain: number | null = null;
+/** Кэш показанной цифры: textContent пишется только при смене, как в HUD. */
+let countdownDigit = 0;
+
+function stopCountdown(): void {
+  countdownEnd = null;
+  countdownRemain = null;
+  countdownDigit = 0;
+  countdownEl.hidden = true;
+}
+
+/** Отсчёт завершён или пропущен — немедленный старт. */
+function skipCountdown(): void {
+  stopCountdown();
+  player.start();
+}
+
+/** Старт выбранной мелодии с отсчётом: player.start() придёт из rAF-цикла. */
+function startWithCountdown(): void {
+  scoreScreen.close(); // новый запуск закрывает висящий экран итогов прошлой попытки
+  countdownEnd = clock.currentTime() + COUNTDOWN_SEC;
+  countdownRemain = null;
+  countdownDigit = 0;
+  countdownEl.hidden = false;
+}
+
+// Пропуск отсчёта — клик или Enter (клавиши-ноты отсчёт НЕ пропускают:
+// случайные нажатия не крадут старт, Enter нотой не является). Клик слушаем
+// в capture-фазе: тот клик, что выбрал мелодию, до окна уже не доходит в
+// bubble — и не «пропустит» только что начатый отсчёт; любой следующий — да.
+window.addEventListener("click", () => {
+  if (countdownEnd !== null) skipCountdown();
+}, { capture: true });
+window.addEventListener("keydown", (e) => {
+  if (e.repeat || e.code !== "Enter" || countdownEnd === null) return;
+  e.preventDefault(); // фокус на кнопке — гасим её синтезированный click
+  skipCountdown();
+});
+
 // --- Клавиатурный ввод ---
 const input = new KeyboardInput(mapping, {
   onNoteOn: (pitch, velocity) => {
     engine.noteOn(pitch, velocity); // мгновенный звук всегда, включая wait-mode
     // Пауза (в т.ч. после ухода со вкладки) — любая клавиша продолжает.
-    if (!player.isRunning && player.currentMelody && player.currentMode !== "free") player.start();
+    // Во время отсчёта ноты старт не крадут: он пропускается кликом/Enter.
+    if (countdownEnd === null && !player.isRunning && player.currentMelody && player.currentMode !== "free") player.start();
     player.onKeyPress(pitch);
   },
   onNoteOff: (pitch) => engine.noteOff(pitch),
@@ -164,6 +214,23 @@ input.attach();
 window.addEventListener("blur", () => {
   input.releaseAll();
   if (player.isRunning) player.pause();
+});
+
+// Отсчёт против паузы вкладки: rAF в фоне заморожен, а аудио-часы идут —
+// остаток замораживаем и при возврате откладываем конец от текущего времени
+// (иначе отсчёт «сгорит» незаметно, пока вкладка в фоне). Плеер при этом не
+// работает — существующий blur-обработчик выше его не трогает.
+window.addEventListener("blur", () => {
+  if (countdownEnd === null) return;
+  countdownRemain = Math.max(0, countdownEnd - clock.currentTime());
+  countdownEnd = null;
+  countdownEl.hidden = true;
+});
+window.addEventListener("focus", () => {
+  if (countdownRemain === null) return;
+  countdownEnd = clock.currentTime() + countdownRemain;
+  countdownRemain = null;
+  countdownEl.hidden = false;
 });
 
 // --- Стартовая подсказка (сценарий 1): до первого жеста (клик/клавиша → clock.resume) ---
@@ -218,7 +285,7 @@ function playMelody(id: string): void {
   }
   player.loadMelody(cloneMelody(melody)); // копия: библиотечный оригинал не мутируется
   player.setMode("learn");
-  player.start();
+  startWithCountdown(); // 5 секунд на подготовку, старт придёт из rAF-цикла
   activeMelodyId = id;
   panels.setActiveMelody(id);
 }
@@ -233,6 +300,7 @@ async function deleteMelody(id: string): Promise<void> {
     return;
   }
   if (activeMelodyId === id) {
+    stopCountdown(); // активную мелодию удалили — висящий отсчёт отменяем
     player.unload();
     player.setMode("free");
     activeMelodyId = null;
@@ -327,6 +395,21 @@ function ensureLayout(): KeyboardLayout {
 }
 
 function drawFrame(): void {
+  // Отсчёт: время только аудио-часы (инвариант #2). Нулевой остаток — старт;
+  // цифра пишется в DOM только при смене (кэш, как у остального HUD).
+  if (countdownEnd !== null) {
+    const remain = countdownEnd - clock.currentTime();
+    if (remain <= 0) {
+      skipCountdown();
+    } else {
+      const digit = Math.ceil(remain);
+      if (digit >= 1 && digit !== countdownDigit) {
+        countdownDigit = digit;
+        countdownEl.textContent = String(digit);
+      }
+    }
+  }
+
   player.update();
 
   const currentLayout = ensureLayout();
@@ -396,7 +479,7 @@ player.onFinished = (result: ScoreResult) => {
   if (settings.get().showScore && result.totalGroups > 0) {
     scoreScreen.show(result, title, () => {
       player.stop();
-      player.start();
+      startWithCountdown(); // «Ещё раз» — снова с отсчётом
     });
   }
 };
