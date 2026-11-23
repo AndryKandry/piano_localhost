@@ -32,9 +32,14 @@
 | diagnostics | diagnostics      |
 
 ### Executing
-| Agent            | Scope        |
-|------------------|--------------|
-| (см. виджет ниже — заполнить после выбора стека) | |
+| Agent            | Scope              |
+|------------------|--------------------|
+| exec-web         | src/**, index.html, public/** |
+| exec-audio       | src/audio/**       |
+| exec-import      | src/import/**      |
+
+(Роли закрываются general-purpose агентами с ролевым промптом; в системе нет
+именованных exec-агентов — резолвинг согласован на «general-purpose + роль».)
 
 ### Models
 | Role | Model |
