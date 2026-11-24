@@ -199,6 +199,8 @@ const input = new KeyboardInput(mapping, {
     engine.allNotesOff();
     updateRangeHud();
     layoutDirty = true;
+    keyboardStateKey = null; // подписи физ. клавиш сместились — форсируем render
+    primer.invalidateKeyboardLayout(); // клавиатура карточек азбуки — тоже
   },
   onPedalChanged: (down) => engine.setPedal(down),
 });
@@ -280,6 +282,9 @@ const panels = initSidePanel({
 const primer = initPrimerScreen({
   root: requireEl<HTMLElement>("primer"),
   canvas: requireEl<HTMLCanvasElement>("primerCanvas"),
+  kbCanvas: requireEl<HTMLCanvasElement>("primerKbCanvas"),
+  mapping, // раскладка/подписи клавиатуры карточек — от живого маппинга
+  pressedPitches: () => input.pressedPitches(),
   onBack: () => setPrimerOpen(false),
 });
 primer.setAudio(engine); // показ ноты на карточке звучит тем же движком
@@ -303,6 +308,7 @@ function setPrimerOpen(open: boolean): void {
       updateRangeHud();
       layoutDirty = true;
       keyboardStateKey = null;
+      primer.invalidateKeyboardLayout(); // клавиатура карточек — от нового маппинга
     }
     panels.toggle(false);
     void primer.open();
@@ -470,7 +476,9 @@ function drawFrame(): void {
 
   // Азбука открыта — главный стейдж скрыт (display:none): рендер полей
   // пропускаем (дешёвый вариант — rAF/HUD/контролы живут, канвасы не рисуем).
-  if (!primerOpen) {
+  if (primerOpen) {
+    primer.updateKeyboard(); // клавиатура карточек: нажатия + верная клавиша после вердикта
+  } else {
     const currentLayout = ensureLayout();
     const melody = player.currentMelody;
     const songTime = player.songTime();

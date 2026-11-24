@@ -708,6 +708,11 @@ body.primer-open #hint {
   flex-direction: column;
   gap: 6px;
 }
+/* display:flex перебивает UA-правило [hidden] — на экране урока список
+   иначе остаётся видимым и съедает высоту у карточек (баг вёрстки). */
+.primer-list[hidden] {
+  display: none;
+}
 .primer-card .mel-main {
   padding: 10px 12px 8px;
 }
@@ -723,9 +728,12 @@ body.primer-open #hint {
   color: var(--ok);
 }
 
-/* Экран урока */
+/* Экран урока: растягивается до низа #primer — клавиатура карточек
+   прижимается к низу экрана урока; при нехватке высоты #primer скроллится
+   (flex-shrink: 0 — контент урока не сжимается ниже содержимого). */
 .primer-lesson {
   width: min(760px, 100%);
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -747,10 +755,29 @@ body.primer-open #hint {
 #primerCanvas {
   width: 100%;
   max-width: 720px;
-  height: 240px;
+  /* Стан забирает свободную высоту урока: пока клавиатура карточек скрыта
+     (факт/выбор) — места больше; на питч-карточках поджимается. */
+  flex: 1 1 120px;
+  min-height: 120px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
+}
+/* Клавиатура карточек (SPEC §4.9): снизу экрана урока, видна только на
+   карточках с ответом-клавишей (видимостью управляет primer/screen.ts). */
+#primerKbCanvas {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 28vh;
+  min-height: 150px;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+/* display:block перебивает UA-правило [hidden] — гасим явно. */
+#primerKbCanvas[hidden] {
+  display: none;
 }
 .primer-prompt {
   margin: 4px 0 0;

@@ -9,11 +9,20 @@
  * handlePitch (main прокидывает питчи KeyboardInput.onNoteOn при открытом
  * экране; основная игра при этом продолжает звучать).
  *
+ * Клавиатура карточек (SPEC §4.9): на карточках с ответом-клавишей внизу
+ * урока — второй инстанс KeyboardRenderer (переиспользование, без копий) на
+ * #primerKbCanvas. Маппинг и зажатые питчи приходят снаружи (deps.mapping,
+ * deps.pressedPitches) — primer не знает про KeyboardInput; раскладка
+ * перестраивается от живого маппинга (октавный сдвиг — invalidateKeyboardLayout).
+ * До ответа подсказки нет; после вердикта верная клавиша подсвечена «жми-сейчас».
+ *
  * Вход: open() (показ списка сразу, шрифт Bravura — ensureBravura с
  * индикатором); выход — кнопка «Назад к пианино» → deps.onBack().
  */
 import { ensureBravura, NotationRenderer } from "../notation/index";
 import { THIN_BARLINE_THICKNESS_SPACES, layoutMeasure } from "../notation/geometry";
+import { computeKeyboardLayout, type KeyboardLayout } from "../core/layout";
+import { KeyboardRenderer } from "../render/keyboard";
 import { el, gameButton, requireEl } from "../ui/dom";
 import { PrimerEngine } from "./engine";
 import { LESSONS } from "./lessons";
@@ -27,11 +36,30 @@ export interface PrimerAudio {
   noteOff(pitch: number): void;
 }
 
+/**
+ * Срез маппинга основной игры для клавиатуры карточек (main передаёт
+ * PitchMapping): primer не знает про input и полный класс — только питчи
+ * диапазона и подписи физ. клавиш (инвариант GLOSSARY #3: связка
+ * «нота ↔ экранная клавиша ↔ физическая клавиша» считается в маппинге).
+ */
+export interface PrimerKeyboardMapping {
+  /** Питчи текущего диапазона по возрастанию (для раскладки клавиш). */
+  pitches(): number[];
+  /** Подпись физической клавиши по питчу («Tab», «[», «Del»…). */
+  labels(): Map<number, string>;
+}
+
 export interface PrimerScreenDeps {
   /** Корень экрана (#primer, в разметке hidden). */
   root: HTMLElement;
   /** Канвас нотации урока (#primerCanvas). */
   canvas: HTMLCanvasElement;
+  /** Канвас экранной клавиатуры карточек (#primerKbCanvas, в разметке hidden). */
+  kbCanvas: HTMLCanvasElement;
+  /** Маппинг основной игры: раскладка и подписи клавиатуры карточек. */
+  mapping: PrimerKeyboardMapping;
+  /** Зажатые сейчас питчи игровой клавиатуры (main: input.pressedPitches()). */
+  pressedPitches(): ReadonlySet<number>;
   /** «Назад к пианино»: main прячет экран и возвращает игру. */
   onBack(): void;
 }
@@ -43,14 +71,23 @@ export interface PrimerScreenApi {
   /** Нажат питч игровой клавиатуры (судится только на питч-карточке в фазе вопроса). */
   handlePitch(pitch: number): void;
   setAudio(audio: PrimerAudio | null): void;
+  /**
+   * Ежекадровое обновление клавиатуры карточек (main.drawFrame при открытом
+   * экране): видимость по виду ответа, нажатия, подсветка верной клавиши.
+   * Рендер — по dirty-ключу состояния, как у основной клавиатуры.
+   */
+  updateKeyboard(): void;
+  /** Маппинг сместился (Z/X, сброс при входе) — раскладка клавиатуры устарела. */
+  invalidateKeyboardLayout(): void;
 }
 
 /** Длительность звучания показанной ноты, мс (короткая, по ТЗ 0.6 с). */
 const NOTE_SOUND_MS = 600;
 
 export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
-  const { root, canvas } = deps;
+  const { root, canvas, kbCanvas } = deps;
   const renderer = new NotationRenderer(canvas);
+  const kbRenderer = new KeyboardRenderer(kbCanvas);
   const engine = new PrimerEngine();
   const progress = new PrimerProgressStore();
 
@@ -75,6 +112,15 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   let soundingPitch: number | null = null;
   /** Обещание загрузки Bravura: карточки рисуются только после него. */
   let fontReady: Promise<void> = Promise.resolve();
+
+  // --- Состояние клавиатуры карточек (SPEC §4.9) ---
+  /** Раскладка клавиатуры карточек (пересоздаётся при resize и сдвиге октавы). */
+  let kbLayout: KeyboardLayout | null = null;
+  let kbLayoutDirty = true;
+  /** Ключ последнего нарисованного состояния: рендер по dirty-ключу, как в main. */
+  let kbStateKey: string | null = null;
+  /** Кэш видимости: DOM-атрибут hidden пишется только при смене. */
+  let kbVisible = false;
 
   backBtn.addEventListener("click", () => deps.onBack());
   window.addEventListener("resize", () => {
@@ -186,8 +232,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     const card = engine.currentCard;
     if (!card) return;
     syncCanvasGeometry();
-    const highlight = engine.currentPhase === "feedback" ? (engine.verdict?.highlightPitch ?? null) : null;
-    drawCard(card, highlight);
+    drawCard(card, currentHighlightPitch());
 
     promptEl.textContent = card.prompt;
     choicesEl.replaceChildren();
@@ -213,6 +258,9 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
       total > 0 ? `Отвечено ${engine.answeredCount}/${total} · стрик ${engine.currentStreak}` : "";
     buildNav(card);
     playCardSound(card);
+    // Синхронно (без кадра задержки): вид ответа мог смениться — клавиатура
+    // появляется/прячется и стан перерисовывается под новую высоту.
+    updateKeyboard();
   }
 
   function submitChoice(index: number): void {
@@ -299,6 +347,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
       navEl.appendChild(nextBtn);
     }
     listBtn.focus();
+    updateKeyboard(); // клавиатура прячется — стан перерисуется на всю высоту
   }
 
   // --- Рисование карточки на стане ---
@@ -406,6 +455,86 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     }
   }
 
+  // --- Клавиатура карточек (SPEC §4.9) ---
+
+  /** Питч подсветки на стане: после вердикта — верная нота, до ответа — нет. */
+  function currentHighlightPitch(): number | null {
+    return engine.currentPhase === "feedback" ? (engine.verdict?.highlightPitch ?? null) : null;
+  }
+
+  /**
+   * Клавиатура нужна на карточках с ответом-клавишей (GLOSSARY: ответ
+   * клавишей): в фазе вопроса — ждать нажатие, в фазе фидбека — показать
+   * верную клавишу. Факты/выбор/список/итог — скрыта: стан забирает место.
+   */
+  function keyboardShouldBeVisible(): boolean {
+    const card = engine.currentCard;
+    return (
+      openFlag &&
+      currentLesson !== null &&
+      engine.currentPhase !== "finished" &&
+      card !== null &&
+      card.answer !== null &&
+      card.answer.type === "pitch"
+    );
+  }
+
+  /** Стан перерисовать под актуальный размер (высота меняется с клавиатурой). */
+  function resyncStaff(): void {
+    if (!openFlag || currentLesson === null) return; // список уроков — стана нет
+    syncCanvasGeometry();
+    if (engine.currentPhase === "finished") {
+      drawStaffContent([], null, null); // чистый стан экрана итога
+      return;
+    }
+    const card = engine.currentCard;
+    if (!card) return;
+    drawCard(card, currentHighlightPitch());
+  }
+
+  function invalidateKeyboardLayout(): void {
+    kbLayoutDirty = true;
+    kbStateKey = null;
+  }
+
+  function updateKeyboard(): void {
+    const visible = keyboardShouldBeVisible();
+    if (visible !== kbVisible) {
+      kbVisible = visible;
+      kbCanvas.hidden = !visible;
+      kbStateKey = null;
+      resyncStaff(); // высота стана зависит от клавиатуры (flex)
+    }
+    if (!visible) return;
+
+    // Пересоздание буфера чистит канвас: раскладка и рисунок устарели.
+    if (kbRenderer.resize()) {
+      kbLayoutDirty = true;
+      kbStateKey = null;
+    }
+    if (kbLayoutDirty || kbLayout === null) {
+      const { width, height } = kbRenderer.size;
+      kbLayout = computeKeyboardLayout(width, height, deps.mapping.pitches());
+      kbLayoutDirty = false;
+    }
+
+    // До ответа подсказки нет; после вердикта — верная клавиша «жми-сейчас».
+    const next = new Set<number>();
+    const highlightPitch = currentHighlightPitch();
+    if (highlightPitch !== null) next.add(highlightPitch);
+
+    const pressed = deps.pressedPitches();
+    const stateKey = `${[...pressed].sort().join(",")}|${[...next].sort().join(",")}`;
+    if (stateKey === kbStateKey) return;
+    kbStateKey = stateKey;
+    kbRenderer.render(kbLayout, {
+      pressed,
+      labelByPitch: deps.mapping.labels(),
+      showNoteNames: true, // SPEC §4.9: в азбуке подписи «C4 (до)» — учебный контекст
+      next,
+    });
+  }
+
   // --- Вход/выход ---
 
   async function open(): Promise<void> {
@@ -436,5 +565,5 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     root.hidden = true;
   }
 
-  return { open, close, isOpen, handlePitch, setAudio };
+  return { open, close, isOpen, handlePitch, setAudio, updateKeyboard, invalidateKeyboardLayout };
 }
