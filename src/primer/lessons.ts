@@ -8,7 +8,7 @@
  * детерминированную функцию, в рантайме — Math.random). Термины — GLOSSARY
  * «Азбука»: нотный стан, скрипичный ключ, длительность, пауза, такт, размер.
  */
-import { pitchName } from "../core/layout";
+import { pitchName, pitchNameRuFull, pitchNameRuStep } from "../core/layout";
 import { pitchToStaffPos, type StaffDuration } from "../notation/geometry";
 import type { ChoiceAnswer, PrimerCard, PrimerLesson, Rng, StaffItem } from "./types";
 
@@ -97,12 +97,17 @@ function staffPositionName(pos: number): string {
 
 // --- Конструкторы карточек ---
 
+/** Западное имя + русская ступень в скобках: «B4 (си)» (GLOSSARY). */
+function namedPitch(pitch: number): string {
+  return `${pitchName(pitch)} (${pitchNameRuStep(pitch)})`;
+}
+
 /** Нота на стане → «нажми клавишу» (GLOSSARY: ответ клавишей). */
 function nameTheNote(pitch: number): PrimerCard {
   return {
     prompt: "Какая нота на стане? Нажми её клавишу",
     staff: [{ kind: "note", pitch, duration: "quarter" }],
-    explanation: `Это ${pitchName(pitch)} — ${staffPositionName(pitchToStaffPos(pitch))}.`,
+    explanation: `Это ${namedPitch(pitch)} — ${staffPositionName(pitchToStaffPos(pitch))}.`,
     answer: { type: "pitch", pitch },
   };
 }
@@ -110,11 +115,11 @@ function nameTheNote(pitch: number): PrimerCard {
 /** Имя ноты → «сыграй» (GLOSSARY: ответ клавишей, мостик к основному режиму). */
 function playTheNote(pitch: number): PrimerCard {
   return {
-    prompt: `Сыграй на клавиатуре ноту ${pitchName(pitch)}`,
+    prompt: `Сыграй на клавиатуре ноту ${namedPitch(pitch)}`,
     staff: [],
-    explanation: `Это ${pitchName(pitch)} — ${staffPositionName(pitchToStaffPos(pitch))}.`,
+    explanation: `Это ${namedPitch(pitch)} — ${staffPositionName(pitchToStaffPos(pitch))}.`,
     answer: { type: "pitch", pitch },
-    label: pitchName(pitch),
+    label: namedPitch(pitch),
   };
 }
 
@@ -228,7 +233,7 @@ function lesson1Facts(): PrimerCard[] {
       prompt: "Это скрипичный ключ",
       staff: [{ kind: "note", pitch: 67, duration: "quarter", highlight: true }],
       explanation:
-        "Скрипичный ключ стоит в начале стана: его завиток указывает на вторую линию — там живёт G4 (подсвечена).",
+        "Скрипичный ключ стоит в начале стана: его завиток указывает на вторую линию — там живёт G4 (соль), она подсвечена.",
       answer: null,
     },
   ];
@@ -240,15 +245,13 @@ function lesson2Facts(): PrimerCard[] {
     {
       prompt: "Первая октава на стане: C4–B4",
       staff: scale,
-      explanation:
-        "Каждая ступень вверх — следующая нота: C4 D4 E4 F4 G4 A4 B4. C4 — на добавочной линейке под станом, B4 — на средней линии.",
+      explanation: `Ноты первой октавы: ${FIRST_OCTAVE.map(namedPitch).join(" ")}. Каждая ступень вверх — следующая нота. C4 — ${pitchNameRuFull(60)}, на добавочной линейке под станом; B4 — ${pitchNameRuFull(71)}, на средней линии.`,
       answer: null,
     },
     {
       prompt: "Добавочные линейки",
       staff: [{ kind: "note", pitch: 60, duration: "quarter", highlight: true }],
-      explanation:
-        "Добавочные линейки — короткие линейки для нот вне пяти линий стана. C4 живёт на первой добавочной линейке снизу (подсвечена).",
+      explanation: `Добавочные линейки — короткие линейки для нот вне пяти линий стана. ${namedPitch(60)} живёт на первой добавочной линейке снизу — это ${pitchNameRuFull(60)}, она подсвечена.`,
       answer: null,
     },
   ];
@@ -260,15 +263,13 @@ function lesson3Facts(): PrimerCard[] {
     {
       prompt: "Вторая октава на стане: C5–B5",
       staff: scale,
-      explanation:
-        "Вторая октава — выше первой: C5 — промежуток над средней линией, F5 — верхняя линия, выше стана — добавочные линейки сверху.",
+      explanation: `Вторая октава — ноты от ${pitchNameRuFull(72)} до ${pitchNameRuFull(83)} — выше первой: C5 (до) — промежуток над средней линией, F5 (фа) — верхняя линия; выше стана — добавочные линейки сверху.`,
       answer: null,
     },
     {
       prompt: "B5 — над первой добавочной",
       staff: [{ kind: "note", pitch: 83, duration: "quarter", highlight: true }],
-      explanation:
-        "B5 (подсвечена) — промежуток над первой добавочной линейкой сверху: линейка через A5, ещё одна под C6 обрамляют ноту.",
+      explanation: `${namedPitch(83)} — это ${pitchNameRuFull(83)}; нота подсвечена и сидит в промежутке над первой добавочной линейкой сверху: линейки через A5 (ля) и под C6 (до) обрамляют её.`,
       answer: null,
     },
   ];
@@ -408,21 +409,21 @@ export const LESSONS: readonly PrimerLesson[] = [
     id: "staff-clef",
     order: 1,
     title: "Стан и скрипичный ключ",
-    description: "Линии и промежутки нотного стана, скрипичный ключ и место G4",
+    description: "Линии и промежутки нотного стана, скрипичный ключ и место G4 (соль)",
     generate: generateLesson1,
   },
   {
     id: "octave-4",
     order: 2,
     title: "Ноты первой октавы",
-    description: "C4–B4 на стане и добавочные линейки (C4 ниже стана)",
+    description: "C4 (до)–B4 (си) на стане и добавочные линейки (C4 ниже стана)",
     generate: generateScaleLesson(FIRST_OCTAVE, lesson2Facts()),
   },
   {
     id: "octave-5",
     order: 3,
     title: "Ноты второй октавы",
-    description: "C5–B5 на стане и добавочные линейки сверху",
+    description: "C5 (до)–B5 (си) на стане и добавочные линейки сверху",
     generate: generateScaleLesson(SECOND_OCTAVE, lesson3Facts()),
   },
   {

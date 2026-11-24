@@ -32,7 +32,8 @@ export function formatDuration(sec: number): string {
 /**
  * Кнопка, не принимающая фокус кликом мыши: Space остаётся педалью, а не
  * «нажать последнюю кнопку» (профиль: игровые клавиши не конфликтуют с UI).
- * Клавиатурная доступность сохранена: Tab + Enter работают как обычно.
+ * Tab — нота C4 по решению игрока (ADR-006): фокус-навигация отключена,
+ * UI — мышью; Enter на сфокусированной кнопке работает как обычно.
  */
 export function gameButton(label: string, onClick: () => void, className = "btn"): HTMLButtonElement {
   const button = el("button", className, label);

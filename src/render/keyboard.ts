@@ -4,7 +4,7 @@
  * рисование в CSS-пикселях через ctx.scale(dpr, dpr).
  */
 import type { KeyboardLayout } from "../core/layout";
-import { pitchName } from "../core/layout";
+import { pitchName, pitchNameRuStep } from "../core/layout";
 import { HIGHLIGHT_NEXT_COLOR } from "./colors";
 
 export interface KeyboardRenderState {
@@ -12,7 +12,7 @@ export interface KeyboardRenderState {
   pressed: ReadonlySet<number>;
   /** Подпись физической клавиши по питчу (из маппинга). */
   labelByPitch: ReadonlyMap<number, string>;
-  /** Имена нот на клавишах (настройка SPEC 4.8, по умолчанию вкл). */
+  /** Имена нот на клавишах «C4 (до)» (настройка SPEC 4.8, по умолчанию вкл). */
   showNoteNames: boolean;
   /** «Жми-сейчас» — яркая подсветка ожидаемых клавиш (инвариант GLOSSARY #5). */
   next?: ReadonlySet<number>;
@@ -173,11 +173,18 @@ export class KeyboardRenderer {
       this.ctx.fillText(physLabel, cx, style.labelBaseline);
     }
     if (state.showNoteNames) {
+      // Одна строка «C4 (до)» (SPEC 4.1): западное имя + русская ступень в
+      // скобках. Не влезает по ширине (чёрная ≈0.6 белой) — остаётся только
+      // русская ступень «(до♯)».
+      const full = `${pitchName(key.pitch)} (${pitchNameRuStep(key.pitch)})`;
+      const short = `(${pitchNameRuStep(key.pitch)})`;
       this.ctx.fillStyle = style.nameColor;
       this.ctx.font = `${style.namePx}px system-ui, sans-serif`;
       this.ctx.textAlign = "center";
       this.ctx.textBaseline = "alphabetic";
-      this.ctx.fillText(pitchName(key.pitch), cx, style.nameBaseline);
+      const maxWidth = key.width - 4;
+      const text = this.ctx.measureText(full).width <= maxWidth ? full : short;
+      this.ctx.fillText(text, cx, style.nameBaseline);
     }
   }
 }

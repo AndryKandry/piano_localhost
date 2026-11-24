@@ -1,10 +1,11 @@
 /**
  * Smoke-проверка маппинга v2 (ADR-006) без браузера: таблица code→pitch
- * (24 ноты C4–B5), подписи клавиш, октавные сдвиги и клампы MIDI 0–127,
- * отсутствие колонок у нот вне охвата. Запуск: npm run smoke:mapping.
+ * (24 ноты C4–B5, Tab = C4), подписи клавиш, октавные сдвиги и клампы
+ * MIDI 0–127, отсутствие колонок у нот вне охвата, русские имена нот
+ * (ступень и полная форма). Запуск: npm run smoke:mapping.
  */
 import { codeLabel, PitchMapping, rangeLabel } from "../src/core/mapping";
-import { computeKeyboardLayout, pitchName } from "../src/core/layout";
+import { computeKeyboardLayout, pitchName, pitchNameRuFull, pitchNameRuStep } from "../src/core/layout";
 
 let checks = 0;
 function assert(condition: boolean, message: string): void {
@@ -17,8 +18,8 @@ function assertEqual<T>(actual: T, expected: T, message: string): void {
 
 /** Таблица ADR-006: 24 ноты C4–B5 — белые + чёрные ряды. */
 const EXPECTED: ReadonlyArray<readonly [string, number]> = [
-  // Белый ряд слева направо.
-  ["Backquote", 60], // C4
+  // Белый ряд слева направо (Tab = C4 по решению игрока, ADR-006 2026-11-24).
+  ["Tab", 60], // C4
   ["KeyQ", 62], // D4
   ["KeyW", 64], // E4
   ["KeyE", 65], // F4
@@ -54,12 +55,13 @@ function testTable(): void {
     assertEqual(mapping.pitchForCode(code), pitch, `${code} → ${pitchName(pitch)}`);
     assert(mapping.isNoteCode(code), `isNoteCode(${code}) — нота (preventDefault, вкл. Backspace)`);
   }
-  // Не-ноты: Tab (a11y), педаль/сдвиг, старые клавиши v1, пропуски 3/7, F-ряд.
-  for (const code of ["Tab", "Space", "KeyZ", "KeyX", "KeyA", "KeyS", "Semicolon", "Digit3", "Digit7", "F4"]) {
+  // Не-ноты: Backquote (освобождён, ADR-006 2026-11-24), педаль/сдвиг,
+  // старые клавиши v1, пропуски 3/7, F-ряд.
+  for (const code of ["Backquote", "Space", "KeyZ", "KeyX", "KeyA", "KeyS", "Semicolon", "Digit3", "Digit7", "F4"]) {
     assertEqual(mapping.pitchForCode(code), null, `${code} вне маппинга`);
     assert(!mapping.isNoteCode(code), `isNoteCode(${code}) = false`);
   }
-  console.log(`  OK: 24 ноты C4–B5, не-ноты (Tab/Space/Z/X/3/7/F4) отфильтрованы`);
+  console.log(`  OK: 24 ноты C4–B5 (Tab = C4), не-ноты (\`/Space/Z/X/3/7/F4) отфильтрованы`);
 }
 
 // --- 2. Подписи клавиш ---
@@ -67,7 +69,7 @@ function testTable(): void {
 function testLabels(): void {
   console.log("Подписи клавиш:");
   const expectedLabels: Record<string, string> = {
-    Backquote: "`",
+    Tab: "Tab",
     KeyQ: "Q",
     KeyW: "W",
     KeyE: "E",
@@ -104,7 +106,7 @@ function testLabels(): void {
     const label = labels.get(pitch);
     assert(label !== undefined && label.length > 0, `подпись питча ${pitchName(pitch)} непустая`);
   }
-  console.log("  OK: ` [ ] \\ − = Del и буквы/цифры, подписи у всех 24 питчей");
+  console.log("  OK: Tab [ ] \\ − = Del и буквы/цифры, подписи у всех 24 питчей");
 }
 
 // --- 3. Диапазон и сдвиги ---
@@ -127,7 +129,7 @@ function testRange(): void {
   assertEqual(rangeUp.basePitch, 72, "сдвиг +1: base C5 = 72");
   assertEqual(rangeUp.topPitch, 95, "сдвиг +1: top B6 = 95");
   assertEqual(rangeLabel(rangeUp), "C5–B6", "HUD при сдвиге +1");
-  assertEqual(mapping.pitchForCode("Backquote"), 72, "сдвиг +1: ` → C5");
+  assertEqual(mapping.pitchForCode("Tab"), 72, "сдвиг +1: Tab → C5");
 
   assert(mapping.shiftOctaves(-1), "shiftOctaves(-1) вернул назад");
   assert(mapping.shiftOctaves(-1), "shiftOctaves(-1) вниз");
@@ -184,12 +186,52 @@ function testOutOfRange(): void {
   console.log("  OK: колонки только у 24 нот охвата, соседние октавы — мимо");
 }
 
+// --- 6. Русские имена нот (GLOSSARY «Русское имя ноты») ---
+
+function testRussianNames(): void {
+  console.log("Русские имена нот:");
+  // Ступень: натуральные и чёрные со знаком ♯ (U+266F).
+  assertEqual(pitchNameRuStep(60), "до", "C4 ступень");
+  assertEqual(pitchNameRuStep(62), "ре", "D4 ступень");
+  assertEqual(pitchNameRuStep(64), "ми", "E4 ступень");
+  assertEqual(pitchNameRuStep(65), "фа", "F4 ступень");
+  assertEqual(pitchNameRuStep(67), "соль", "G4 ступень");
+  assertEqual(pitchNameRuStep(69), "ля", "A4 ступень");
+  assertEqual(pitchNameRuStep(71), "си", "B4 ступень");
+  assertEqual(pitchNameRuStep(61), "до♯", "C#4 ступень со знаком ♯");
+  assertEqual(pitchNameRuStep(63), "ре♯", "D#4 ступень");
+  assertEqual(pitchNameRuStep(66), "фа♯", "F#4 ступень");
+  assertEqual(pitchNameRuStep(70), "ля♯", "A#4 ступень");
+  assertEqual(pitchNameRuStep(78), "фа♯", "F#5 ступень");
+  assertEqual(pitchNameRuStep(83), "си", "B5 ступень");
+  // Полная форма — родительный падеж «нота <чего>».
+  assertEqual(pitchNameRuFull(60), "до первой октавы", "C4 полная форма");
+  assertEqual(pitchNameRuFull(71), "си первой октавы", "B4 полная форма");
+  assertEqual(pitchNameRuFull(72), "до второй октавы", "C5 полная форма");
+  assertEqual(pitchNameRuFull(83), "си второй октавы", "B5 полная форма");
+  assertEqual(pitchNameRuFull(48), "до малой октавы", "C3 полная форма");
+  assertEqual(pitchNameRuFull(36), "до большой октавы", "C2 полная форма");
+  assertEqual(pitchNameRuFull(84), "до третьей октавы", "C6 полная форма");
+  assertEqual(pitchNameRuFull(24), "до контроктавы", "C1 полная форма");
+  assertEqual(pitchNameRuFull(12), "до субконтроктавы", "C0 полная форма");
+  // Вся таблица маппинга: ступень непустая и не совпадает с соседней белой.
+  const mapping = new PitchMapping();
+  for (const pitch of mapping.pitches()) {
+    const step = pitchNameRuStep(pitch);
+    assert(step.length > 0, `ступень ${pitchName(pitch)} непустая`);
+    assert(pitchNameRuFull(pitch).startsWith(step), `полная форма ${pitchName(pitch)} начинается со ступени`);
+  }
+  assertEqual(pitchNameRuFull(0), "до (C-1)", "ниже субконтроктавы — fallback на западное имя");
+  console.log("  OK: ступени до…си с ♯, полные формы с падежами октав, fallback ниже субконтроктавы");
+}
+
 async function main(): Promise<void> {
   testTable();
   testLabels();
   testRange();
   testClamps();
   testOutOfRange();
+  testRussianNames();
   console.log(`SMOKE OK: ${checks} проверок пройдено`);
 }
 

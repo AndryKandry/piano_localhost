@@ -2,6 +2,9 @@
  * Слушатель физической клавиатуры (SPEC 4.2): event.code → нота (инвариант #1),
  * фильтр event.repeat, реестр зажатых, preventDefault на клавишах маппинга
  * + Space, Z/X — октавный сдвиг, Space — педаль.
+ *
+ * Tab — нота C4 по решению игрока (ADR-006, пересмотр 2026-11-24):
+ * фокус-навигация отключена (preventDefault на клавишах маппинга), UI — мышью.
  */
 import type { PitchMapping } from "../core/mapping";
 import { DEFAULT_VELOCITY } from "../core/types";

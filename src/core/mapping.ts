@@ -4,10 +4,11 @@
  * физическая клавиша» всегда считается здесь, через текущий октавный сдвиг.
  *
  * База v2 (ADR-006): 2 полные октавы C4–B5, 24 ноты, хроматический ряд
- * «как Virtual Piano». Белые — `` ` Q W E R T Y U I O P [ ] \ `` слева
+ * «как Virtual Piano». Белые — `Tab Q W E R T Y U I O P [ ] \` слева
  * направо, чёрные — `1 2 4 5 6 8 9 − = Del` (цифровой ряд; 3 и 7 пропущены —
- * между E–F и B–C чёрных нет). Tab — НЕ нота: перехват ломает
- * фокус-навигацию (a11y); C4 живёт на Backquote — соседняя позиция.
+ * между E–F и B–C чёрных нет). Tab — нота C4 по явному решению игрока
+ * (ADR-006, пересмотр 2026-11-24): фокус-навигацией игрок не пользуется,
+ * UI — мышью; Backquote освобождён (не нота).
  *
  * Резолв по `event.code` — работает при любой раскладке ОС (инвариант #1).
  */
@@ -15,7 +16,7 @@ import type { MappingRange } from "./types";
 import { isBlackPitch, pitchName } from "./layout";
 
 const WHITE_CODES = [
-  "Backquote",
+  "Tab",
   "KeyQ",
   "KeyW",
   "KeyE",
@@ -48,7 +49,7 @@ const BASE_PITCH = 60;
 const MIDI_MIN = 0;
 const MIDI_MAX = 127;
 
-/** Подпись физической клавиши для экранной клавиши (ADR-006: «`», «[», «−», «Del»…). */
+/** Подпись физической клавиши для экранной клавиши (ADR-006: «Tab», «[», «−», «Del»…). */
 export function codeLabel(code: string): string {
   switch (code) {
     case "Backquote":
