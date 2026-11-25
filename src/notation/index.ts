@@ -11,5 +11,5 @@
  *   // клик по стану: yToPitch(y, r.staffTop, r.staffSpace)
  */
 export { BRAVURA_FAMILY, ensureBravura } from "./font";
-export { NotationRenderer, type GlyphDrawOptions, type LabelOptions } from "./renderer";
+export { NotationRenderer, NOTATION_INK, type GlyphDrawOptions, type LabelOptions } from "./renderer";
 export * from "./geometry";

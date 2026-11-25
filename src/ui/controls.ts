@@ -124,7 +124,12 @@ export function initControls(deps: ControlsDeps): ControlsApi {
   };
 
   function syncSeg<T extends string>(map: Map<T, HTMLButtonElement>, current: T): void {
-    for (const [value, button] of map) button.classList.toggle("active", value === current);
+    // Выбранная в сегменте ровно одна: .active + aria-pressed (DS §3.2)
+    for (const [value, button] of map) {
+      const active = value === current;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    }
   }
 
   function syncSlider(

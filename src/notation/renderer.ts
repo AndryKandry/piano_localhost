@@ -42,10 +42,15 @@ import { BRAVURA_FAMILY } from "./font";
 
 const COLORS = {
   background: "#141821",
-  staff: "#3f4a5e",
+  staff: "#5a6680", // guide-line: линии стана, 3.1:1 на panel (design-system §2.2, §2.3)
   ink: "#e9e7e2",
   label: "#8a91a0",
 } as const;
+
+/** Токен notation-ink (design-system §2.2): чернила стана для вне-канвасного
+ *  использования (подпись карточки азбуки в primer/screen.ts). Канвас-константа
+ *  — единственное место, где hex живёт вне :root. */
+export const NOTATION_INK = COLORS.ink;
 
 /** Кодпоинты глифов SMuFL (research 05 §1.1 — таблица из спеки). */
 const SMUFL = {

@@ -12,8 +12,25 @@ import type { Melody } from "../core/types";
 import { PARTY_COLORS } from "../render/colors";
 import { el, gameButton } from "./dom";
 
+export interface ConfirmOptions {
+  /** Заголовок карточки («Удалить «Название»?»). */
+  title: string;
+  /** Пояснение под заголовком (что произойдёт и обратимо ли). */
+  hint: string;
+  /** Надпись danger primary-кнопки («Удалить»). */
+  confirmLabel: string;
+  /** Надпись второстепенной кнопки (по умолчанию «Отмена»). */
+  cancelLabel?: string;
+}
+
 export interface DialogsApi {
   openSplit(id: string): void;
+  /**
+   * Модальное подтверждение (DS §3.8): true — нажата danger primary,
+   * false — отмена, Escape или клик мимо карточки. Заменяет window.confirm,
+   * который блокирует rAF и вне системы (нативное окно не стилизуется).
+   */
+  confirm(options: ConfirmOptions): Promise<boolean>;
 }
 
 export interface DialogsDeps {
@@ -120,5 +137,50 @@ export function initDialogs(deps: DialogsDeps): DialogsApi {
     window.addEventListener("keydown", onEscape);
   }
 
-  return { openSplit };
+  function confirm(options: ConfirmOptions): Promise<boolean> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (confirmed: boolean): void => {
+        if (settled) return;
+        settled = true;
+        close();
+        resolve(confirmed);
+      };
+
+      const backdrop = el("div", "dialog-backdrop");
+      backdrop.addEventListener("click", (event) => {
+        if (event.target === backdrop) finish(false);
+      });
+
+      const card = el("div", "dialog-card");
+      card.appendChild(el("h3", "dialog-title", options.title));
+      card.appendChild(el("p", "dialog-hint", options.hint));
+
+      // §3.8: второстепенная, затем primary (здесь — danger primary: краснеет
+      // только как заливка необратимого действия, не «в покое»).
+      const cancelBtn = gameButton(options.cancelLabel ?? "Отмена", () => finish(false));
+      const confirmBtn = gameButton(options.confirmLabel, () => finish(true), "btn danger primary");
+      const actions = el("div", "dialog-actions");
+      actions.append(cancelBtn, confirmBtn);
+      card.appendChild(actions);
+
+      backdrop.appendChild(card);
+      deps.root.replaceChildren(backdrop);
+      confirmBtn.focus(); // фокус приходит на primary (DS §3.8)
+
+      const onEscape = (event: KeyboardEvent): void => {
+        // Самоочистка: другой модал мог заменить наш DOM.
+        if (!backdrop.isConnected) {
+          window.removeEventListener("keydown", onEscape);
+          escapeHandler = null;
+          return;
+        }
+        if (event.code === "Escape") finish(false);
+      };
+      escapeHandler = onEscape;
+      window.addEventListener("keydown", onEscape);
+    });
+  }
+
+  return { openSplit, confirm };
 }

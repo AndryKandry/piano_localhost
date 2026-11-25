@@ -1,7 +1,8 @@
 /**
  * Полноэкранный экран «Азбуки» (SPEC §4.9, ADR-007 п.6): список уроков
- * (карточки .mel-card со статусом 🔒/открыт/✓) и экран урока — канвас
- * нотации (NotationRenderer) + DOM (вопрос, кнопки выбора, счёт, навигация).
+ * (карточки .mel-card со статусом «закрыт»/«открыт»/«✓ пройден») и экран
+ * урока — канвас нотации (NotationRenderer) + DOM (вопрос, кнопки выбора,
+ * счёт, навигация).
  *
  * Движок хода урока — primer/engine.ts (чистая логика); экран только
  * рисует и слушает. Звук карточек внедряется сеттером setAudio (main передаёт
@@ -19,7 +20,7 @@
  * Вход: open() (показ списка сразу, шрифт Bravura — ensureBravura с
  * индикатором); выход — кнопка «Назад к пианино» → deps.onBack().
  */
-import { ensureBravura, NotationRenderer } from "../notation/index";
+import { ensureBravura, NotationRenderer, NOTATION_INK } from "../notation/index";
 import { THIN_BARLINE_THICKNESS_SPACES, layoutMeasure } from "../notation/geometry";
 import { computeKeyboardLayout, type KeyboardLayout } from "../core/layout";
 import { KeyboardRenderer } from "../render/keyboard";
@@ -192,7 +193,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
       el(
         "span",
         `mel-badge ${passed ? "primer-badge-done" : unlocked ? "primer-badge-open" : "primer-badge-locked"}`,
-        passed ? "✓ пройден" : unlocked ? "открыт" : "🔒 закрыт",
+        passed ? "✓ пройден" : unlocked ? "открыт" : "закрыт",
       ),
     );
     const metaLine = el("span", "mel-meta");
@@ -266,6 +267,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   function submitChoice(index: number): void {
     const verdict = engine.answerChoice(index);
     if (!verdict) return;
+    markChoices(index, verdict.correct);
     disableChoices();
     showVerdict(verdict);
     const card = engine.currentCard;
@@ -288,6 +290,25 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
 
   function disableChoices(): void {
     for (const node of choicesEl.querySelectorAll("button")) (node as HTMLButtonElement).disabled = true;
+  }
+
+  /**
+   * Вердикт на кнопках выбора (DS §3.12 [цель]): выбранный неверный — рамка
+   * --error (.wrong), верный — рамка --ok (.correct, в т.ч. когда верным был
+   * другой вариант), остальные приглушены (.dim — opacity 0.4, как disabled).
+   * Верный вариант остаётся виден: ответ — часть объяснения, а не только
+   * вердикт словом. Для ответа клавишей верное показывают стан и подсветка
+   * клавиши — кнопок нет, разметка не нужна.
+   */
+  function markChoices(chosenIndex: number, correct: boolean): void {
+    const card = engine.currentCard;
+    const correctIndex = card?.answer?.type === "choice" ? card.answer.correctIndex : null;
+    choicesEl.querySelectorAll("button").forEach((node, index) => {
+      const button = node as HTMLButtonElement;
+      if (index === chosenIndex) button.classList.add(correct ? "correct" : "wrong");
+      else if (index === correctIndex) button.classList.add("correct");
+      else button.classList.add("dim");
+    });
   }
 
   function showVerdict(verdict: { correct: boolean; explanation: string }): void {
@@ -373,7 +394,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
       renderer.drawNote(highlightPitch, "quarter", width / 2, { highlight: true });
     }
     if (label) {
-      renderer.drawLabel(label, width / 2, height - ss * 0.7, { sizePx: Math.round(ss * 0.95), color: "#e9e7e2" });
+      renderer.drawLabel(label, width / 2, height - ss * 0.7, { sizePx: Math.round(ss * 0.95), color: NOTATION_INK });
     }
   }
 

@@ -3,17 +3,73 @@
  * контролы, диалоги, тосты. Тёмная тема, DOM — только для панелей (ADR-004).
  */
 
+/* Токены — единственный источник цветов DOM (design-system §2.1, §2.4, §2.5).
+   Новый hex вне этого блока — дефект ревью; недостающий токен правит файл
+   дизайн-системы, а не локальное значение. */
 :root {
   color-scheme: dark;
+
+  /* Сцена (нейтральные) */
   --bg: #0e1116;
   --panel: #141821;
   --panel-2: #1a2030;
   --border: #2a3244;
   --text: #cfd6e4;
+  --text-strong: #f3f5f9;
   --muted: #8b93a7;
+  --overlay: rgba(5, 7, 11, 0.6);
+
+  /* Акцент — «латунь под лампой», рампа из трёх ступеней */
   --accent: #ffd166;
+  --accent-deep: #ffb020;
+  --accent-tint: #ffe9a8;
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --on-accent: #141821;
+
+  /* Семантика; --warn равен accent-deep — различим только словом или глифом */
   --error: #ff7a6e;
   --ok: #7ddba3;
+  --warn: #ffb020;
+  /* Мягкие заливки семантики — та же формула, что у accent-soft */
+  --error-soft: color-mix(in srgb, var(--error) 12%, transparent);
+  --ok-soft: color-mix(in srgb, var(--ok) 12%, transparent);
+
+  /* Типографика (§2.4): кегли, вне шкалы не дробим */
+  --fs-display: 58px;
+  --fs-2xl: 20px;
+  --fs-xl: 16px;
+  --fs-lg: 14px;
+  --fs-md: 13px;
+  --fs-sm: 12px;
+  --fs-xs: 11px;
+  --fs-2xs: 10px;
+
+  /* Spacing, база 4px; полушаги 6/10/14/18 запрещены */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* Радиусы */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 12px;
+  --r-pill: 999px;
+
+  /* Тени — только чёрным альфа-каналом, только у парящего */
+  --shadow-1: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-panel: -16px 0 32px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --halo: 0 4px 30px rgba(14, 17, 22, 0.75);
+
+  /* Моушн (§4): анимируются только transform и opacity */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
 }
 
 html,
@@ -57,9 +113,7 @@ body {
 #hud b {
   color: var(--text);
   font-weight: 600;
-}
-#hud .hud-keys {
-  opacity: 0.75;
+  font-variant-numeric: tabular-nums; /* живые числа не прыгают (§2.4) */
 }
 #hudLoad.loading {
   color: var(--accent);
@@ -78,7 +132,6 @@ body {
 }
 #hudAttribution {
   margin-left: auto;
-  opacity: 0.75;
 }
 
 /* --- Стейдж: канвасы (ADR-004, DOM сюда не входит) --- */
@@ -116,14 +169,14 @@ body {
   line-height: 1;
   font-weight: 700;
   color: var(--accent);
-  text-shadow: 0 4px 30px color-mix(in srgb, var(--bg) 75%, transparent);
+  text-shadow: var(--halo); /* ореол отделяет цифру от нот (§2.5) */
   opacity: 0.92; /* ноты под цифрой остаются читаемыми */
   pointer-events: none;
   z-index: 5;
 }
 /* Лёгкое появление при каждом запуске отсчёта (hidden → показ) */
 #countdown:not([hidden]) {
-  animation: countdown-in 0.3s ease;
+  animation: countdown-in 0.3s var(--ease-out);
 }
 @keyframes countdown-in {
   from {
@@ -141,16 +194,16 @@ body {
   top: 32%;
   left: 50%;
   transform: translate(-50%, -50%);
-  padding: 14px 26px;
-  font-size: 22px;
+  padding: var(--sp-4) var(--sp-6);
+  font-size: var(--fs-2xl);
   letter-spacing: 0.02em;
   color: var(--text);
   background: color-mix(in srgb, var(--panel) 85%, transparent);
   border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-xl);
   pointer-events: none;
   z-index: 9;
-  transition: opacity 0.5s ease;
+  transition: opacity 0.3s var(--ease-in);
 }
 #hint.hidden {
   opacity: 0;
@@ -163,33 +216,61 @@ body {
   border: 1px solid var(--border);
   color: var(--text);
   padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
   font-family: inherit;
   cursor: pointer;
 }
 .btn:hover {
   border-color: var(--muted);
 }
+.btn:active {
+  /* Нажата: без сдвига и трансформаций — кнопка не «прыгает» (§3.1) */
+  background: color-mix(in srgb, var(--text) 10%, var(--panel-2));
+  border-color: var(--muted);
+}
 .btn:disabled {
   opacity: 0.4;
   cursor: default;
 }
+/* Выбрана — тонировка янтарем (состояние), не заливка (§3.1):
+   primary и «выбрана» больше не выглядят одинаково */
 .btn.active {
+  background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
+  font-weight: 600;
 }
+/* Primary — заливка янтарем (действие); на экране одна (§3.1) */
 .btn.primary {
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.btn.primary:hover {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
 }
 .btn.small {
   padding: 2px 8px;
   font-size: 11px;
 }
+/* Danger в покое краснеет только на hover (§5) */
 .btn.danger:hover {
+  background: var(--error-soft);
   border-color: var(--error);
   color: var(--error);
+}
+/* Danger primary — подтверждение необратимого действия (§3.8) */
+.btn.danger.primary {
+  background: var(--error);
+  border-color: var(--error);
+  color: var(--on-accent);
+}
+.btn.danger.primary:hover {
+  background: color-mix(in srgb, var(--error) 88%, var(--bg));
+  border-color: color-mix(in srgb, var(--error) 88%, var(--bg));
 }
 .btn.wide {
   width: 100%;
@@ -209,11 +290,20 @@ select:focus-visible {
   margin-left: -1px;
 }
 .seg .btn:first-child {
-  border-radius: 6px 0 0 6px;
+  border-radius: var(--r-md) 0 0 var(--r-md);
   margin-left: 0;
 }
 .seg .btn:last-child {
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+.seg .btn:focus-visible {
+  outline-offset: -2px; /* рамка не вылезает за склеенный сегмент (§3.1) */
+}
+/* Выбранная в сегменте поверх соседей: иначе её янтарную рамку
+   перекрывает рамка следующей кнопки (§3.2) */
+.seg .btn.active {
+  position: relative;
+  z-index: 1;
 }
 
 /* --- Панель управления --- */
@@ -261,7 +351,7 @@ input[type="color"] {
   height: 24px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--r-md);
   background: var(--panel-2);
   cursor: pointer;
 }
@@ -307,17 +397,18 @@ select {
   z-index: 20;
   background: color-mix(in srgb, var(--panel) 96%, transparent);
   border-left: 1px solid var(--border);
-  padding: 40px 14px 20px;
+  box-shadow: var(--shadow-panel);
+  padding: 40px var(--sp-4) var(--sp-5);
   overflow-y: auto;
   transform: translateX(100%);
-  transition: transform 0.18s ease;
+  transition: transform 0.18s var(--ease-out);
 }
 .side-panel.open {
   transform: translateX(0);
 }
 
 .panel-section {
-  margin-bottom: 18px;
+  margin-bottom: var(--sp-4);
 }
 .panel-heading {
   margin: 0 0 8px;
@@ -328,7 +419,7 @@ select {
   color: var(--muted);
 }
 .panel-hint {
-  margin: 6px 0 0;
+  margin: var(--sp-2) 0 0;
   font-size: 11px;
   color: var(--muted);
   line-height: 1.4;
@@ -339,7 +430,7 @@ select {
 .melody-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 .mel-card {
   border: 1px solid var(--border);
@@ -356,7 +447,7 @@ select {
   background: none;
   border: none;
   color: var(--text);
-  padding: 8px 10px 6px;
+  padding: 8px 12px 8px;
   cursor: pointer;
   font-family: inherit;
 }
@@ -365,6 +456,16 @@ select {
 }
 .mel-card.active .mel-main:hover {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+/* Закрытый урок не притворяется открытым: без hover, заголовок --muted (§3.3) */
+.mel-main:disabled {
+  cursor: default;
+}
+.mel-main:disabled:hover {
+  background: none;
+}
+.mel-main:disabled .mel-title {
+  color: var(--muted);
 }
 .mel-title-row {
   display: flex;
@@ -376,29 +477,27 @@ select {
   font-size: 13px;
   font-weight: 600;
 }
+/* Бейджи нейтральны по умолчанию (§3.3): происхождение файла и «своя» —
+   не статус; цвет бейджа = статус (открыт/пройден/закрыт) */
 .mel-badge {
   flex: none;
   font-size: 10px;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--border);
   color: var(--muted);
 }
-.mel-badge.user {
-  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
-  color: var(--ok);
-}
 .mel-meta {
   display: flex;
-  gap: 10px;
+  gap: var(--sp-3);
   margin-top: 3px;
   font-size: 11px;
   color: var(--muted);
 }
 .mel-actions {
   display: flex;
-  gap: 6px;
-  padding: 0 10px 8px;
+  gap: var(--sp-2);
+  padding: 0 12px 8px;
 }
 
 /* --- Тембр --- */
@@ -441,14 +540,23 @@ select {
 
 /* --- Модальные диалоги --- */
 
+/* Диалог: вход 180ms --ease-out — фон opacity 0→1, карточка 8px снизу;
+   закрытие мгновенное (§3.8). Диалоги создаются в JS (ui/dialogs.ts, ui/score.ts)
+   — анимация стартует сама при вставке в #dialogRoot. */
 .dialog-backdrop {
   position: fixed;
   inset: 0;
   z-index: 30;
-  background: rgba(5, 7, 11, 0.6);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
+  animation: backdrop-in 0.18s var(--ease-out);
+}
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
 }
 .dialog-card {
   width: min(480px, 92vw);
@@ -456,17 +564,26 @@ select {
   overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 18px 20px;
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-2);
+  padding: var(--sp-5);
+  animation: dialog-card-in 0.18s var(--ease-out);
+}
+@keyframes dialog-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 .dialog-title {
-  margin: 0 0 10px;
-  font-size: 16px;
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-xl);
+  font-weight: 600;
   color: var(--text);
 }
 .dialog-hint {
-  margin: 0 0 14px;
-  font-size: 12px;
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-sm);
   color: var(--muted);
   line-height: 1.45;
 }
@@ -482,23 +599,26 @@ select {
 
 /* Диалог разбора партий */
 .split-value {
-  font-size: 14px;
+  font-size: var(--fs-lg);
+  font-weight: 600;
   color: var(--accent);
-  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: var(--sp-2);
 }
 .split-scale {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted);
   margin-top: 2px;
 }
 .split-counts {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  font-size: 13px;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
 }
 .split-counts .dot {
   width: 10px;
@@ -528,24 +648,25 @@ select {
   color: var(--muted);
 }
 .score-card .dialog-title {
-  margin-bottom: 14px;
+  margin-bottom: var(--sp-4);
 }
 .score-percent {
-  font-size: 58px;
+  font-size: var(--fs-display);
   font-weight: 700;
   color: var(--accent);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 .score-sub {
-  margin: 4px 0 14px;
-  font-size: 12px;
+  margin: var(--sp-1) 0 var(--sp-4);
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 .score-stats {
   display: flex;
   justify-content: center;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
 }
 .stat-tile {
   display: flex;
@@ -558,9 +679,10 @@ select {
   min-width: 88px;
 }
 .stat-value {
-  font-size: 18px;
+  font-size: var(--fs-xl);
   font-weight: 600;
   color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 .stat-label {
   font-size: 11px;
@@ -568,12 +690,12 @@ select {
 }
 .score-errors {
   border-top: 1px solid var(--border);
-  padding-top: 10px;
+  padding-top: var(--sp-3);
   text-align: left;
 }
 .score-errors-title {
-  margin: 0 0 6px;
-  font-size: 12px;
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 .score-errors-title.ok {
@@ -606,8 +728,8 @@ select {
 #dropCard {
   padding: 34px 46px;
   border: 2px dashed var(--accent);
-  border-radius: 14px;
-  font-size: 20px;
+  border-radius: var(--r-xl);
+  font-size: var(--fs-2xl);
   color: var(--accent);
   text-align: center;
   line-height: 1.5;
@@ -621,26 +743,38 @@ select {
 
 .toast-root {
   position: fixed;
-  top: 96px;
+  /* Под шапкой, как панель-переключатель: высоту шапки даёт --header-h
+     (ResizeObserver в main.ts) — тост не наезжает на легенду клавиш. */
+  top: calc(var(--header-h, 96px) + 8px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   pointer-events: none;
 }
+/* Тост парит над сценой — единственный DOM-элемент с --shadow-1 (§2.5).
+   Вход 180ms --ease-out (opacity, -4px снизу), уход 300ms --ease-in (§3.7). */
 .toast {
   padding: 8px 14px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 12px;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+  font-size: var(--fs-sm);
   color: var(--text);
   max-width: 70vw;
   opacity: 1;
-  transition: opacity 0.3s ease;
+  animation: toast-in 0.18s var(--ease-out);
+  transition: opacity 0.3s var(--ease-in);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 .toast.error {
   border-color: color-mix(in srgb, var(--error) 60%, transparent);
@@ -679,11 +813,12 @@ body.primer-open #hint {
   width: min(760px, 100%);
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--sp-4);
 }
 .primer-title {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--fs-2xl);
+  font-weight: 600; /* вес заголовка явно — не UA-bold (§2.4) */
   color: var(--text);
 }
 .primer-topbar-hint {
@@ -706,7 +841,7 @@ body.primer-open #hint {
   width: min(760px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 /* display:flex перебивает UA-правило [hidden] — на экране урока список
    иначе остаётся видимым и съедает высоту у карточек (баг вёрстки). */
@@ -714,10 +849,10 @@ body.primer-open #hint {
   display: none;
 }
 .primer-card .mel-main {
-  padding: 10px 12px 8px;
+  padding: 12px;
 }
 .primer-card .mel-meta {
-  gap: 14px;
+  gap: var(--sp-4);
 }
 .primer-badge-open {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
@@ -726,6 +861,12 @@ body.primer-open #hint {
 .primer-badge-done {
   border-color: color-mix(in srgb, var(--ok) 55%, transparent);
   color: var(--ok);
+}
+/* Закрыт — нейтральный (§3.3): правило явное, хотя база уже нейтральна —
+   класс используется в primer/screen.ts и не должен полагаться на случай */
+.primer-badge-locked {
+  border-color: var(--border);
+  color: var(--muted);
 }
 
 /* Экран урока: растягивается до низа #primer — клавиатура карточек
@@ -744,7 +885,8 @@ body.primer-open #hint {
 }
 .primer-lesson-title {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--fs-xl);
+  font-weight: 600; /* вес заголовка явно — не UA-bold (§2.4) */
   color: var(--text);
 }
 .primer-lesson-desc {
@@ -794,8 +936,26 @@ body.primer-open #hint {
   max-width: 560px;
 }
 .primer-choice {
-  font-size: 15px;
+  font-size: var(--fs-lg);
   padding: 8px 18px;
+}
+/* Вердикт на выборах (§3.12): выбранный неверный — рамка --error,
+   верный — рамка --ok, остальные приглушены (opacity 0.4 — как disabled,
+   но выбранный и верный остаются читаемыми). Появление мгновенное (§4). */
+.primer-choice.correct {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.primer-choice.wrong {
+  border-color: var(--error);
+  color: var(--error);
+}
+.primer-choice.correct,
+.primer-choice.wrong {
+  opacity: 1; /* поверх .btn:disabled — вердикт должен быть виден */
+}
+.primer-choice.dim {
+  opacity: 0.4; /* не участвует в вердикте (§2.3: disabled 0.4 — допустимо) */
 }
 .primer-keyhint {
   margin: 0;
@@ -829,4 +989,17 @@ body.primer-open #hint {
   justify-content: center;
   gap: 8px;
   min-height: 30px;
+}
+
+/* --- Моушн: reduced motion (§4) ---
+   Длительности 0: панель, тосты и диалоги появляются без сдвига.
+   Музыкальное время это не затрагивает — ноты, линия удара, подсветка
+   клавиш и вердикт и так мгновенные (рисуются кадром, не transition). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0ms !important;
+    transition-duration: 0ms !important;
+  }
 }
