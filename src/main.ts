@@ -1,7 +1,7 @@
 /**
  * Финальная сборка (очередь 4): игровые канвасы + DOM-панели (библиотека,
  * загрузка, тембр, настройки), панель управления, диалог «Разбор партий»,
- * экран итогов, офлайн (service worker, только prod).
+ * подтверждение удаления, экран итогов, офлайн (service worker, только prod).
  * Сценарии SPEC §3: 1–8.
  *
  * Один rAF-цикл: аудио-часы каждый кадр (инвариант GLOSSARY #2), позиция
@@ -339,7 +339,16 @@ function playMelody(id: string): void {
 
 async function deleteMelody(id: string): Promise<void> {
   const meta = library.list().find((entry) => entry.id === id);
-  if (meta && !window.confirm(`Удалить «${meta.title}» из библиотеки?`)) return;
+  if (meta) {
+    // Подтверждение в системе (DS §3.8): window.confirm блокирует rAF и
+    // вне дизайн-системы; здесь — диалог с [Отмена][Удалить].
+    const confirmed = await dialogs.confirm({
+      title: `Удалить «${meta.title}»?`,
+      hint: "Мелодия будет удалена из библиотеки (IndexedDB) безвозвратно.",
+      confirmLabel: "Удалить",
+    });
+    if (!confirmed) return;
+  }
   try {
     await library.remove(id);
   } catch (error) {

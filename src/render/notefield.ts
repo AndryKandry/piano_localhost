@@ -31,7 +31,7 @@ const MIN_NOTE_HEIGHT_PX = 4;
 
 const COLORS = {
   background: "#0e1116",
-  hitLine: "#3a4356",
+  hitLine: "#5a6680", // guide-line: линия удара, 3.3:1 на bg (design-system §2.2, §2.3)
 } as const;
 
 export interface NoteFieldFrame {

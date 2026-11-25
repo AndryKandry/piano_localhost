@@ -20,19 +20,44 @@ export interface KeyboardRenderState {
   auto?: ReadonlyMap<number, string>;
 }
 
+/**
+ * Канвас-константы — копии токенов design-system §2.2 (файл DS — источник
+ * значений; CSS-переменные :root здесь не читаются — §6 «канвас-правила»).
+ */
 const COLORS = {
-  background: "#141821",
-  whiteKey: "#e9e7e2",
-  whiteKeyPressed: "#ffd166",
-  whiteBorder: "#0b0e13",
-  blackKey: "#232a38",
-  blackKeyPressed: "#ffb020",
-  blackBorder: "#05070b",
-  whiteLabel: "#3a4050",
-  whiteNoteName: "#8a91a0",
-  blackLabel: "#c9cfdd",
-  blackNoteName: "#97a0b4",
+  background: "#141821", // --panel
+  whiteKey: "#ded9cb", // key-white (слоновая кость)
+  whiteKeyPressed: "#ffd166", // key-white-pressed = --accent
+  whiteBorder: "#0b0e13", // key-border-white
+  blackKey: "#232a38", // key-black
+  blackKeyPressed: "#ffb020", // key-black-pressed = --accent-deep
+  blackBorder: "#05070b", // key-border-black
+  whiteLabel: "#3a4050", // key-white-label
+  whiteNoteName: "#4f5a73", // key-white-note-name
+  blackLabel: "#c9cfdd", // key-black-label
+  blackNoteName: "#97a0b4", // key-black-note-name
+  onAccent: "#141821", // --on-accent: чернила подписей на янтарной заливке (pressed/next чёрной, §3.11)
+  textStrong: "#f3f5f9", // --text-strong: чернила подписей на заливке автопартии (auto чёрной, §3.11)
 } as const;
+
+/**
+ * Чернила подписей чёрной клавиши по её состоянию (design-system §3.11):
+ * янтарная заливка (pressed/next) — --on-accent, заливка автопартии —
+ * --text-strong, покой — свои светлые. Приоритет pressed/next над auto:
+ * их заливка рисуется поверх auto (порядок слоёв §3.11).
+ */
+function blackKeyLabelInk(
+  state: KeyboardRenderState,
+  pitch: number,
+): { label: string; name: string } {
+  if (state.pressed.has(pitch) || state.next?.has(pitch) === true) {
+    return { label: COLORS.onAccent, name: COLORS.onAccent };
+  }
+  if (state.auto?.has(pitch) === true) {
+    return { label: COLORS.textStrong, name: COLORS.textStrong };
+  }
+  return { label: COLORS.blackLabel, name: COLORS.blackNoteName };
+}
 
 export class KeyboardRenderer {
   private readonly ctx: CanvasRenderingContext2D;
@@ -126,25 +151,28 @@ export class KeyboardRenderer {
       }
     }
 
-    // Подписи — поверх подсветки: физическая клавиша + имя ноты.
+    // Подписи — поверх подсветки: физическая клавиша + имя ноты. Чернила
+    // выбираются по состоянию клавиши (§3.11): у белой — одинаковы в покое,
+    // next и pressed; на auto-заливке имя ноты темнеет до key-white-label.
     for (const key of layout.keys) {
       if (key.isBlack) continue;
       this.drawKeyLabels(key, state, {
         labelColor: COLORS.whiteLabel,
-        nameColor: COLORS.whiteNoteName,
+        nameColor: state.auto?.has(key.pitch) === true ? COLORS.whiteLabel : COLORS.whiteNoteName,
         labelPx: Math.min(14, Math.max(9, key.width * 0.32)),
-        namePx: Math.min(10, Math.max(8, key.width * 0.22)),
+        namePx: Math.min(10, Math.max(9, key.width * 0.22)),
         labelBaseline: layout.height - 24,
         nameBaseline: layout.height - 9,
       });
     }
     for (const key of layout.keys) {
       if (!key.isBlack) continue;
+      const ink = blackKeyLabelInk(state, key.pitch);
       this.drawKeyLabels(key, state, {
-        labelColor: COLORS.blackLabel,
-        nameColor: COLORS.blackNoteName,
-        labelPx: Math.min(11, Math.max(8, key.width * 0.4)),
-        namePx: Math.min(9, Math.max(7, key.width * 0.3)),
+        labelColor: ink.label,
+        nameColor: ink.name,
+        labelPx: Math.min(11, Math.max(9, key.width * 0.4)),
+        namePx: Math.min(9, Math.max(9, key.width * 0.3)),
         labelBaseline: key.height - 8,
         nameBaseline: key.height - 22,
       });
