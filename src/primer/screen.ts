@@ -19,6 +19,10 @@
  *
  * Вход: open() (показ списка сразу, шрифт Bravura — ensureBravura с
  * индикатором); выход — кнопка «Назад к пианино» → deps.onBack().
+ *
+ * Список уроков включает секцию «Практика» (SPEC §4.10): карточка «Нотной
+ * тетради» открывает режим практики — notebook-screen.ts, живёт ВНУТРИ этого
+ * экрана (тот же мост handlePitch/updateKeyboard, main про тетрадь не знает).
  */
 import { ensureBravura, NotationRenderer, NOTATION_INK } from "../notation/index";
 import { THIN_BARLINE_THICKNESS_SPACES, layoutMeasure } from "../notation/geometry";
@@ -27,6 +31,8 @@ import { KeyboardRenderer } from "../render/keyboard";
 import { el, gameButton, requireEl } from "../ui/dom";
 import { PrimerEngine } from "./engine";
 import { LESSONS } from "./lessons";
+import { initNotebookScreen, type NotebookScreenApi } from "./notebook-screen";
+import { NOTEBOOK_LEVELS, notebookProgressKey } from "./notebook";
 import { PrimerProgressStore } from "./progress";
 import { PRIMER_PASS_PERCENT } from "./types";
 import type { PrimerCard, PrimerLesson, StaffItem, StaffNote } from "./types";
@@ -69,7 +75,9 @@ export interface PrimerScreenApi {
   open(): Promise<void>;
   close(): void;
   isOpen(): boolean;
-  /** Нажат питч игровой клавиатуры (судится только на питч-карточке в фазе вопроса). */
+  /** Открыть «Нотную тетрадь» (SPEC §4.10): список прячется, режим практики. */
+  openNotebook(): Promise<void>;
+  /** Нажат питч игровой клавиатуры (судится карточкой или тетрадью). */
   handlePitch(pitch: number): void;
   setAudio(audio: PrimerAudio | null): void;
   /**
@@ -91,6 +99,13 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   const kbRenderer = new KeyboardRenderer(kbCanvas);
   const engine = new PrimerEngine();
   const progress = new PrimerProgressStore();
+  /** «Нотная тетрадь» (SPEC §4.10) — режим практики внутри азбуки. */
+  const notebook: NotebookScreenApi = initNotebookScreen({
+    mapping: deps.mapping,
+    pressedPitches: deps.pressedPitches,
+    progress,
+    onBack: showList,
+  });
 
   // --- DOM-элементы экрана (разметка в index.html) ---
   const backBtn = requireEl<HTMLButtonElement>("primerBack");
@@ -125,6 +140,10 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
 
   backBtn.addEventListener("click", () => deps.onBack());
   window.addEventListener("resize", () => {
+    if (notebook.isActive()) {
+      notebook.redraw();
+      return;
+    }
     if (openFlag && currentLesson !== null && engine.currentPhase !== "finished") showCurrentCard();
   });
 
@@ -168,12 +187,46 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   function showList(): void {
     stopSound();
     currentLesson = null;
+    notebook.close(); // из тетради вернулись к списку (SPEC §4.10: выход — как из урока)
     listEl.hidden = false;
     lessonEl.hidden = true;
     listEl.replaceChildren();
     for (const lesson of LESSONS) {
       listEl.appendChild(buildLessonCard(lesson));
     }
+    listEl.appendChild(buildPracticeSection());
+  }
+
+  /**
+   * Секция «Практика» (SPEC §4.10): под уроками — карточка «Нотной тетради»
+   * с бейджем лучшего % по всем уровням (прогресс notebook-level-N).
+   */
+  function buildPracticeSection(): HTMLElement {
+    const section = el("div", "primer-practice");
+    section.appendChild(el("h3", "primer-section-title", "Практика"));
+    const best = Math.max(0, ...NOTEBOOK_LEVELS.map((level) => progress.bestPercent(notebookProgressKey(level))));
+    const passed = best >= PRIMER_PASS_PERCENT;
+
+    const card = el("div", "mel-card primer-card");
+    const main = el("button", "mel-main");
+    main.type = "button";
+    main.addEventListener("mousedown", (event) => event.preventDefault()); // Space остаётся педалью
+
+    const titleRow = el("span", "mel-title-row");
+    titleRow.append(
+      el("span", "mel-title", "Нотная тетрадь (чтение с листа)"),
+      el("span", `mel-badge ${best > 0 ? (passed ? "primer-badge-done" : "primer-badge-open") : "primer-badge-open"}`, best > 0 ? `${best}%` : "практика"),
+    );
+    const metaLine = el("span", "mel-meta");
+    metaLine.append(
+      el("span", undefined, "Сыграй подряд 8 сгенерированных тактов — 4 уровня: от четвертей первой октавы до восьмых в обеих"),
+      el("span", undefined, best > 0 ? `Лучший: ${best}%` : "Попыток не было"),
+    );
+    main.append(titleRow, metaLine);
+    main.addEventListener("click", () => void openNotebook());
+    card.appendChild(main);
+    section.appendChild(card);
+    return section;
   }
 
   function buildLessonCard(lesson: PrimerLesson): HTMLElement {
@@ -277,7 +330,13 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   }
 
   function handlePitch(pitch: number): void {
-    if (!openFlag || currentLesson === null) return;
+    if (!openFlag) return;
+    // Тетрадь (SPEC §4.10) — режим внутри азбуки: питчи судит NotebookJudge.
+    if (notebook.isActive()) {
+      notebook.handlePitch(pitch);
+      return;
+    }
+    if (currentLesson === null) return;
     const verdict = engine.answerPitch(pitch);
     if (!verdict) return;
     disableChoices();
@@ -489,6 +548,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
    * верную клавишу. Факты/выбор/список/итог — скрыта: стан забирает место.
    */
   function keyboardShouldBeVisible(): boolean {
+    if (notebook.isActive()) return false; // клавиатурой тетради ведёт notebook-screen
     const card = engine.currentCard;
     return (
       openFlag &&
@@ -502,6 +562,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
 
   /** Стан перерисовать под актуальный размер (высота меняется с клавиатурой). */
   function resyncStaff(): void {
+    if (notebook.isActive()) return; // станом тетради ведёт notebook-screen
     if (!openFlag || currentLesson === null) return; // список уроков — стана нет
     syncCanvasGeometry();
     if (engine.currentPhase === "finished") {
@@ -516,9 +577,19 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   function invalidateKeyboardLayout(): void {
     kbLayoutDirty = true;
     kbStateKey = null;
+    notebook.invalidateKeyboardLayout();
   }
 
   function updateKeyboard(): void {
+    if (notebook.isActive()) {
+      notebook.updateKeyboard();
+      return;
+    }
+    updateLessonKeyboard();
+  }
+
+  /** Клавиатура карточек урока (тетрадь вела бы свою — см. updateKeyboard). */
+  function updateLessonKeyboard(): void {
     const visible = keyboardShouldBeVisible();
     if (visible !== kbVisible) {
       kbVisible = visible;
@@ -579,12 +650,27 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     }
   }
 
+  /**
+   * Режим «Нотной тетради» (SPEC §4.10): список уроков прячется, тетрадь
+   * рисует свои две строки стана и свою клавиатуру. Внутри открытого
+   * primer-экрана — main про тетрадь не знает (флаг primerOpen один).
+   */
+  async function openNotebook(): Promise<void> {
+    if (!openFlag) return;
+    await fontReady.catch(() => undefined);
+    if (!openFlag) return;
+    listEl.hidden = true;
+    lessonEl.hidden = true;
+    await notebook.open();
+  }
+
   function close(): void {
     if (!openFlag) return;
     openFlag = false;
     stopSound();
+    notebook.close();
     root.hidden = true;
   }
 
-  return { open, close, isOpen, handlePitch, setAudio, updateKeyboard, invalidateKeyboardLayout };
+  return { open, close, isOpen, openNotebook, handlePitch, setAudio, updateKeyboard, invalidateKeyboardLayout };
 }

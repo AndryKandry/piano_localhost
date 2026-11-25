@@ -63,6 +63,22 @@
         <!-- Клавиатура карточек (SPEC §4.9): на питч-карточках снизу урока -->
         <canvas id="primerKbCanvas" hidden></canvas>
       </div>
+      <!-- Нотная тетрадь (SPEC §4.10, PIANO-12): режим практики внутри азбуки.
+           Канвасы — свои (по паттерну урока), рендеры те же классы. -->
+      <div id="primerNotebook" class="primer-notebook" hidden>
+        <div class="primer-nb-bar">
+          <span class="primer-nb-label">Уровень:</span>
+          <div id="primerNbLevels" class="seg" role="group" aria-label="Уровень тетради"></div>
+          <button id="primerNbNew" type="button" class="btn">Новая тетрадь</button>
+          <button id="primerNbBack" type="button" class="btn">К списку уроков</button>
+        </div>
+        <p id="primerNbStatus" class="primer-score"></p>
+        <p id="primerNbFeedback" class="primer-feedback"></p>
+        <canvas id="primerNbCanvas"></canvas>
+        <div id="primerNbResult" class="primer-nb-result" hidden></div>
+        <!-- Клавиатура тетради: «жми-сейчас» — текущая нота (тот же рендер, что у карточек) -->
+        <canvas id="primerNbKbCanvas" hidden></canvas>
+      </div>
     </section>
     <script type="module" src="/src/main.ts"></script>
   </body>

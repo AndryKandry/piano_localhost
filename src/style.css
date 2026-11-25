@@ -991,6 +991,105 @@ body.primer-open #hint {
   min-height: 30px;
 }
 
+/* --- Нотная тетрадь (SPEC §4.10, PIANO-12): режим практики внутри азбуки ---
+   Контейнер — по паттерну .primer-lesson; канвасы/клавиатура — те же роли
+   токенов (панель-подложка стана, рамка --border, --r-lg — DS §3.13). */
+
+.primer-practice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.primer-section-title {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-md);
+  font-weight: 600; /* вес заголовка явно — не UA-bold (§2.4) */
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.primer-notebook {
+  width: min(760px, 100%);
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.primer-notebook[hidden] {
+  display: none;
+}
+
+/* Топбар тетради: уровень (сегмент), «Новая тетрадь», «К списку уроков». */
+.primer-nb-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.primer-nb-label {
+  font-size: var(--fs-md);
+  color: var(--muted);
+}
+
+#primerNbCanvas {
+  width: 100%;
+  max-width: 720px;
+  /* Две строки стана: забирает свободную высоту тетради; при нехватке —
+     минимальная высота, #primer скроллится (как на экране урока). */
+  flex: 1 1 200px;
+  min-height: 200px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+/* Клавиатура тетради — видима в фазе playing (ведёт notebook-screen.ts). */
+#primerNbKbCanvas {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 28vh;
+  min-height: 150px;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+#primerNbKbCanvas[hidden] {
+  display: none;
+}
+
+/* Итог-панель сессии (по завершении тетради). */
+.primer-nb-result {
+  width: 100%;
+  max-width: 560px;
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+.primer-nb-result[hidden] {
+  display: none;
+}
+.primer-nb-result-title {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  color: var(--ok);
+}
+.primer-nb-result-line {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- Моушн: reduced motion (§4) ---
    Длительности 0: панель, тосты и диалоги появляются без сдвига.
    Музыкальное время это не затрагивает — ноты, линия удара, подсветка
