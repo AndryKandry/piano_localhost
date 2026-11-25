@@ -267,6 +267,12 @@ export function initNotebookScreen(deps: NotebookScreenDeps): NotebookScreenApi 
       return;
     }
 
+    // Стан: две системы с ключом (drawStaff рисует 5 линий + скрипичный ключ
+    // у левого края). Без этого вызова ноты висят в пустоте — баг v1.
+    const staffW = width - margin * 2;
+    renderer.drawStaff(margin, staffW, top1);
+    renderer.drawStaff(margin, staffW, top2);
+
     const measuresPerSystem = 4;
     const measureW = usable / measuresPerSystem;
     positions = [];
@@ -279,8 +285,9 @@ export function initNotebookScreen(deps: NotebookScreenDeps): NotebookScreenApi 
       if (local === 0) renderer.drawTimeSignature(4, 4, x0 + ss * 0.8, topY);
 
       const barlineX = x0 + measureW - (THIN_BARLINE_THICKNESS_SPACES * ss) / 2;
-      const areaStart = x0 + ss * 0.4 + timeSigW;
-      const areaWidth = Math.max(0, barlineX - ss * 0.2 - areaStart);
+      // Внутренний воздух такта: слоты вплотную к чертам сливаются в кучу.
+      const areaStart = x0 + ss * 0.4 + timeSigW + ss * 0.3;
+      const areaWidth = Math.max(0, barlineX - ss * 0.2 - areaStart - ss * 0.3);
       const slots = layoutMeasure(
         measure.items.map((note) => note.duration),
         areaStart,
