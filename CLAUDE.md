@@ -8,6 +8,7 @@
 - **Dev approach:** `DEV_APPROACH: domain-first`
 - **TaskBoard:** доска `PIANO` (сервер 127.0.0.1:8642, `taskb` CLI)
 - **Формат отчётов:** `./dev-report/<slug>-<YYYY-MM-DD>.md`
+- **DESIGN_SYSTEM:** `piano` (файл `~/.claude/design-systems/piano.md`; UI-правки — только его токенами, канвас-цвета по §6)
 
 ## Domain-first артефакты
 
