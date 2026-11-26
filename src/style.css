@@ -796,12 +796,17 @@ body.primer-open #hint {
 }
 
 #primer {
+  /* border-box обязателен: height 100vh + padding-top при content-box
+     давало контент = окно + 16px — весь раздел уезжал вниз (баг игрока). */
+  box-sizing: border-box;
   height: 100vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 16px;
+  /* Нижний паддинг 0: клавиатура урока/тетради прижимается к нижнему краю
+     окна — иначе даже влезающая по сумме колонка выталкивала её на padding. */
+  padding: 16px 16px 0;
   gap: 12px;
   background: var(--bg);
 }
@@ -1015,7 +1020,9 @@ body.primer-open #hint {
      flex-shrink обязателен: без него колонка выше окна — клавиатура
      уезжает за нижний край (скролл). */
   width: 100%;
-  flex: 1 1 auto;
+  /* basis 0, не auto: тетрадь занимает РОВНО остаток высоты окна — при auto
+     колонка растёт от контента и клавиатура уезжает за нижний край. */
+  flex: 1 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1052,18 +1059,23 @@ body.primer-open #hint {
   background: var(--panel);
 }
 /* Клавиатура тетради — во всю ширину окна, как основной режим (запрос игрока).
-   max-width нет сознательно: контейнер full-width. */
+   Высота фиксированная, не vh: при низкой высоте окна vh раздувал колонку и
+   клавиатура уезжала за экран (запрос игрока). */
 #primerNbKbCanvas {
   flex: 0 0 auto;
   width: 100%;
-  height: 24vh;
-  min-height: 140px;
+  height: 150px;
   display: block;
   border: 1px solid var(--border);
   background: var(--panel);
 }
 #primerNbKbCanvas[hidden] {
   display: none;
+}
+/* Фидбек тетради: пустая строка не резервирует высоту урока (2.6em) —
+   тетрадь обязана влезать при низкой высоте окна. */
+.primer-notebook .primer-feedback {
+  min-height: 1.4em;
 }
 
 /* Итог-панель сессии (по завершении тетради). */
