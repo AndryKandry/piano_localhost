@@ -26,7 +26,9 @@
  * Рядом секция «Слух» (PIANO-17): карточка «Музыкального диктанта» открывает
  * dictation-screen.ts по тому же паттерну, и секция «Гитара» (research 06):
  * уроки Г1–Г6 — своя цепочка гейтов, звук показа на звучащей высоте
- * (cardSoundPitch), диаграмма грифа на #primerGfCanvas (updateGf).
+ * (cardSoundPitch), диаграмма грифа на #primerGfCanvas (updateGf); под
+ * уроками — карточка «Гитарной тетради» (PIANO-20): guitar-notebook-screen.ts
+ * по паттерну тетради, подсказка «Клавиатура | Гриф | Нет».
  */
 import { ensureBravura, NotationRenderer, NOTATION_INK } from "../notation/index";
 import { THIN_BARLINE_THICKNESS_SPACES, layoutMeasure, pitchToStaffPos } from "../notation/geometry";
@@ -39,9 +41,11 @@ import { LESSONS } from "./lessons";
 import { cardSoundPitch, fretboardHighlight, GUITAR_LESSONS } from "./guitar-lessons";
 import { initNotebookScreen, type NotebookScreenApi } from "./notebook-screen";
 import { initDictationScreen, type DictationScreenApi, type PrimerPlayback } from "./dictation-screen";
+import { initGuitarNotebookScreen, type GuitarNotebookScreenApi } from "./guitar-notebook-screen";
 import type { SettingsStore } from "../core/settings";
 import { NOTEBOOK_LEVELS, notebookProgressKey } from "./notebook";
 import { DICTATION_LEVELS, dictationProgressKey } from "./dictation";
+import { GUITAR_NOTEBOOK_LEVELS, guitarNotebookProgressKey } from "./guitar-notebook";
 import { PrimerProgressStore } from "./progress";
 import { PRIMER_PASS_PERCENT } from "./types";
 import type { PrimerCard, PrimerLesson, StaffItem, StaffNote } from "./types";
@@ -94,6 +98,8 @@ export interface PrimerScreenApi {
   openNotebook(): Promise<void>;
   /** Открыть «Музыкальный диктант» (PIANO-17): список прячется, режим слуха. */
   openDictation(): Promise<void>;
+  /** Открыть «Гитарную тетрадь» (PIANO-20): список прячется, режим практики. */
+  openGuitarNotebook(): Promise<void>;
   /** Нажат питч игровой клавиатуры (судится карточкой или тетрадью). */
   handlePitch(pitch: number): void;
   setAudio(audio: PrimerAudio | null): void;
@@ -131,6 +137,14 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     pressedPitches: deps.pressedPitches,
     progress,
     playback: deps.dictationPlayback,
+    onBack: showList,
+  });
+  /** «Гитарная тетрадь» (PIANO-20) — режим практики внутри азбуки. */
+  const guitarNotebook: GuitarNotebookScreenApi = initGuitarNotebookScreen({
+    mapping: deps.mapping,
+    pressedPitches: deps.pressedPitches,
+    progress,
+    settings: deps.settings,
     onBack: showList,
   });
 
@@ -177,6 +191,10 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     }
     if (notebook.isActive()) {
       notebook.redraw();
+      return;
+    }
+    if (guitarNotebook.isActive()) {
+      guitarNotebook.redraw();
       return;
     }
     if (openFlag && currentLesson !== null && engine.currentPhase !== "finished") showCurrentCard();
@@ -230,6 +248,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     currentLesson = null;
     notebook.close(); // из тетради вернулись к списку (SPEC §4.10: выход — как из урока)
     dictation.close(); // из диктанта — так же (PIANO-17)
+    guitarNotebook.close(); // из гитарной тетради — так же (PIANO-20)
     listEl.hidden = false;
     lessonEl.hidden = true;
     listEl.replaceChildren();
@@ -346,7 +365,10 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
 
   /**
    * Секция «Гитара» (research 06): уроки Г1–Г6, независимая от нотной
-   * цепочка гейтов — гейты считаются по GUITAR_LESSONS.
+   * цепочка гейтов — гейты считаются по GUITAR_LESSONS. Под уроками —
+   * карточка «Гитарной тетради» (PIANO-20, SPEC §4.13) по паттерну секции
+   * «Практика»: бейдж лучшего % по всем уровням (прогресс
+   * guitar-notebook-level-N).
    */
   function buildGuitarSection(): HTMLElement {
     const section = el("div", "primer-practice");
@@ -354,6 +376,35 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     for (const lesson of GUITAR_LESSONS) {
       section.appendChild(buildLessonCard(lesson, GUITAR_LESSONS));
     }
+    section.appendChild(buildGuitarNotebookCard());
+    return section;
+  }
+
+  /** Карточка «Гитарной тетради» — практика чтения с листа в I позиции. */
+  function buildGuitarNotebookCard(): HTMLElement {
+    const section = el("div", "primer-practice");
+    const best = Math.max(0, ...GUITAR_NOTEBOOK_LEVELS.map((level) => progress.bestPercent(guitarNotebookProgressKey(level))));
+    const passed = best >= PRIMER_PASS_PERCENT;
+
+    const card = el("div", "mel-card primer-card");
+    const main = el("button", "mel-main");
+    main.type = "button";
+    main.addEventListener("mousedown", (event) => event.preventDefault()); // Space остаётся педалью
+
+    const titleRow = el("span", "mel-title-row");
+    titleRow.append(
+      el("span", "mel-title", "Гитарная тетрадь (чтение с листа)"),
+      el("span", `mel-badge ${best > 0 ? (passed ? "primer-badge-done" : "primer-badge-open") : "primer-badge-open"}`, best > 0 ? `${best}%` : "чтение"),
+    );
+    const metaLine = el("span", "mel-meta");
+    metaLine.append(
+      el("span", undefined, "Сыграй подряд 8 тактов в I позиции — 4 уровня: от открытых струн до всей I позиции с диезами. Подсказка: клавиатура, гриф или чистое чтение"),
+      el("span", undefined, best > 0 ? `Лучший: ${best}%` : "Попыток не было"),
+    );
+    main.append(titleRow, metaLine);
+    main.addEventListener("click", () => void openGuitarNotebook());
+    card.appendChild(main);
+    section.appendChild(card);
     return section;
   }
 
@@ -496,6 +547,11 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     // Тетрадь (SPEC §4.10) — режим внутри азбуки: питчи судит NotebookJudge.
     if (notebook.isActive()) {
       notebook.handlePitch(pitch);
+      return;
+    }
+    // Гитарная тетрадь (PIANO-20) — режим внутри азбуки: тот же NotebookJudge.
+    if (guitarNotebook.isActive()) {
+      guitarNotebook.handlePitch(pitch);
       return;
     }
     if (currentLesson === null) return;
@@ -718,6 +774,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
       currentLesson?.section === "guitar" &&
       engine.currentPhase !== "finished" &&
       !notebook.isActive() &&
+      !guitarNotebook.isActive() &&
       !dictation.isActive()
     );
   }
@@ -755,6 +812,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   function keyboardShouldBeVisible(): boolean {
     if (dictation.isActive()) return false; // клавиатурой диктанта ведёт dictation-screen
     if (notebook.isActive()) return false; // клавиатурой тетради ведёт notebook-screen
+    if (guitarNotebook.isActive()) return false; // клавиатурой гитарной тетради ведёт её экран
     const card = engine.currentCard;
     return (
       openFlag &&
@@ -770,6 +828,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   function resyncStaff(): void {
     if (dictation.isActive()) return; // экраном диктанта ведёт dictation-screen
     if (notebook.isActive()) return; // станом тетради ведёт notebook-screen
+    if (guitarNotebook.isActive()) return; // станом гитарной тетради ведёт её экран
     if (!openFlag || currentLesson === null) return; // список уроков — стана нет
     syncCanvasGeometry();
     if (engine.currentPhase === "finished") {
@@ -786,6 +845,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     kbStateKey = null;
     notebook.invalidateKeyboardLayout();
     dictation.invalidateKeyboardLayout();
+    guitarNotebook.invalidateKeyboardLayout();
   }
 
   function updateKeyboard(): void {
@@ -795,6 +855,10 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     }
     if (notebook.isActive()) {
       notebook.updateKeyboard();
+      return;
+    }
+    if (guitarNotebook.isActive()) {
+      guitarNotebook.updateKeyboard();
       return;
     }
     updateLessonKeyboard();
@@ -889,12 +953,27 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     dictation.open();
   }
 
+  /**
+   * Режим «Гитарной тетради» (PIANO-20): список уроков прячется, тетрадь
+   * рисует свой стан (I позиции), свою клавиатуру и свою диаграмму грифа.
+   * Внутри открытого primer-экрана — main про неё не знает.
+   */
+  async function openGuitarNotebook(): Promise<void> {
+    if (!openFlag) return;
+    await fontReady.catch(() => undefined); // стан рисуется только со шрифтом
+    if (!openFlag) return;
+    listEl.hidden = true;
+    lessonEl.hidden = true;
+    await guitarNotebook.open();
+  }
+
   function close(): void {
     if (!openFlag) return;
     openFlag = false;
     stopSound();
     notebook.close();
     dictation.close();
+    guitarNotebook.close();
     root.hidden = true;
   }
 
@@ -904,6 +983,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     isOpen,
     openNotebook,
     openDictation,
+    openGuitarNotebook,
     handlePitch,
     setAudio,
     updateKeyboard,

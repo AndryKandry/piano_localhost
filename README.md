@@ -82,6 +82,7 @@ npm run smoke:player    # 67: судья, wait-mode, планировщик, п�
 npm run smoke:ui        # 53: настройки, сплит партий
 npm run smoke:notation  # геометрия нотного стана азбуки
 npm run smoke:primer    # движок уроков азбуки, прогресс, блокировка до 80%
+npm run smoke:guitar-notebook  # генератор гитарной тетради, словарь I позиции, режимы подсказки
 ```
 
 ## Структура

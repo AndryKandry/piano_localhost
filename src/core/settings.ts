@@ -17,6 +17,19 @@ export interface PartyColors {
   left: string;
 }
 
+/**
+ * Подсказка «Гитарной тетради» (PIANO-20) — выбор игрока, сегмент
+ * «Клавиатура | Гриф | Нет»: keyboard — «жми-сейчас» на клавиатуре роя (как
+ * notebookKeyHint в тетради, SPEC §4.10); fretboard — диаграмма грифа с
+ * кружком «струна.лад» текущей ноты (research 06 §3: вторая проекция квиза);
+ * none — чистое чтение с листа (подсветка стана остаётся — это задание).
+ * Дефолт «keyboard» — «вкл», как у тетради. Три состояния одним полем:
+ * подсказки взаимоисключающие (один сегмент), boolean их не кодирует.
+ */
+export type GuitarHintMode = "keyboard" | "fretboard" | "none";
+
+export const GUITAR_HINT_MODES: readonly GuitarHintMode[] = ["keyboard", "fretboard", "none"];
+
 export interface Settings {
   partyColors: PartyColors;
   /** Имена нот на экранных клавишах (SPEC §4.1). */
@@ -32,6 +45,9 @@ export interface Settings {
   /** Тетрадь: подсветка «жми-сейчас» на клавиатуре (SPEC §4.10). Выкл — игрок
       сам вспоминает клавишу по ноте на стане. */
   notebookKeyHint: boolean;
+  /** Гитарная тетрадь: подсказка «Клавиатура | Гриф | Нет» (PIANO-20).
+      Дефолт keyboard — подсказка «вкл», как notebookKeyHint. */
+  guitarNotebookHint: GuitarHintMode;
   /** Метроном в обучении/автоплее (SPEC §4.3). Выкл по умолчанию. */
   metronomeOn: boolean;
 }
@@ -49,6 +65,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   defaultPreset: "piano",
   showScore: true,
   notebookKeyHint: true,
+  guitarNotebookHint: "keyboard",
   metronomeOn: false,
 };
 
@@ -83,6 +100,11 @@ export function normalizeSettings(raw: unknown): Settings {
     showNoteNames: typeof src.showNoteNames === "boolean" ? src.showNoteNames : DEFAULT_SETTINGS.showNoteNames,
     notebookKeyHint:
       typeof src.notebookKeyHint === "boolean" ? src.notebookKeyHint : DEFAULT_SETTINGS.notebookKeyHint,
+    guitarNotebookHint:
+      typeof src.guitarNotebookHint === "string" &&
+      (GUITAR_HINT_MODES as ReadonlyArray<string>).includes(src.guitarNotebookHint)
+        ? (src.guitarNotebookHint as GuitarHintMode)
+        : DEFAULT_SETTINGS.guitarNotebookHint,
     hitWindowMs: clampNumber(src.hitWindowMs, HIT_WINDOW_MIN_MS, HIT_WINDOW_MAX_MS, DEFAULT_SETTINGS.hitWindowMs),
     volume: clampNumber(src.volume, 0, 1, DEFAULT_SETTINGS.volume),
     defaultPreset:
