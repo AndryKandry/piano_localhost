@@ -3,12 +3,23 @@
  * (инвариант GLOSSARY #3, SPEC §5). Связка «нота ↔ экранная клавиша ↔
  * физическая клавиша» всегда считается здесь, через текущий октавный сдвиг.
  *
- * База v2 (ADR-006): 2 полные октавы C4–B5, 24 ноты, хроматический ряд
- * «как Virtual Piano». Белые — `Tab Q W E R T Y U I O P [ ] \` слева
- * направо, чёрные — `1 2 4 5 6 8 9 − = Del` (цифровой ряд; 3 и 7 пропущены —
- * между E–F и B–C чёрных нет). Tab — нота C4 по явному решению игрока
- * (ADR-006, пересмотр 2026-11-24): фокус-навигацией игрок не пользуется,
- * UI — мышью; Backquote освобождён (не нота).
+ * База v3 (ADR-006, дополнено 2026-11-26): 3 полные октавы C4–B6, 36 нот,
+ * хроматический ряд «как Virtual Piano». Таблица клавиш:
+ *
+ *   | Ряд            | Клавиши                           | Ноты              |
+ *   |----------------|-----------------------------------|-------------------|
+ *   | белые, окт. 4  | Tab Q W E R T Y U I O P [ ] \     | C4 … B5 (14)      |
+ *   | белые, окт. 6  | B N M , . / Shift(правый)         | C6 … B6 (7)       |
+ *   | чёрные, окт. 4–5 | 1 2 4 5 6 8 9 − = Del(⌫)        | C♯4 … A♯5 (10)    |
+ *   | чёрные, окт. 6 | H J L ; '                         | C♯6 … A♯6 (5)     |
+ *
+ * Белый ряд продолжается хроматически в нижний буквенный ряд (B N M , . /
+ * ShiftRight) — правый Shift сознательно замыкает его: геометрически стоит
+ * над «/»; ShiftLeft остаётся свободным модификатором (не нота). Чёрные
+ * третьей октавы — домашний ряд H J L ; ' (над B N M , . /). 3 и 7 в
+ * цифровом ряду пропущены — между E–F и B–C чёрных нет. Tab — нота C4 по
+ * явному решению игрока (ADR-006, пересмотр 2026-11-24): фокус-навигацией
+ * игрок не пользуется, UI — мышью; Backquote освобождён (не нота).
  *
  * Резолв по `event.code` — работает при любой раскладке ОС (инвариант #1).
  */
@@ -16,6 +27,7 @@ import type { MappingRange } from "./types";
 import { isBlackPitch, pitchName } from "./layout";
 
 const WHITE_CODES = [
+  // Октавы 4–5: верхний буквенный + Tab.
   "Tab",
   "KeyQ",
   "KeyW",
@@ -30,8 +42,17 @@ const WHITE_CODES = [
   "BracketLeft",
   "BracketRight",
   "Backslash",
+  // Октава 6: нижний буквенный ряд, правый Shift замыкает (ADR-006 v3).
+  "KeyB",
+  "KeyN",
+  "KeyM",
+  "Comma",
+  "Period",
+  "Slash",
+  "ShiftRight",
 ] as const;
 const BLACK_CODES = [
+  // Октавы 4–5: цифровой ряд (3 и 7 пропущены — чёрных между E–F и B–C нет).
   "Digit1",
   "Digit2",
   "Digit4",
@@ -42,6 +63,12 @@ const BLACK_CODES = [
   "Minus",
   "Equal",
   "Backspace",
+  // Октава 6: домашний ряд (ADR-006 v3).
+  "KeyH",
+  "KeyJ",
+  "KeyL",
+  "Semicolon",
+  "Quote",
 ] as const;
 
 /** База маппинга — C4 (GLOSSARY: C4 = MIDI 60). */
@@ -66,6 +93,18 @@ export function codeLabel(code: string): string {
       return "=";
     case "Backspace":
       return "Del";
+    case "Comma":
+      return ",";
+    case "Period":
+      return ".";
+    case "Slash":
+      return "/";
+    case "Semicolon":
+      return ";";
+    case "Quote":
+      return "'";
+    case "ShiftRight":
+      return "Shift"; // правый Shift — нота B6; левый остаётся модификатором
   }
   if (code.startsWith("Key")) return code.slice(3);
   if (code.startsWith("Digit")) return code.slice(5);
