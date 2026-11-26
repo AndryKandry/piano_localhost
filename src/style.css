@@ -1010,12 +1010,15 @@ body.primer-open #hint {
 }
 
 .primer-notebook {
-  width: min(760px, 100%);
+  /* Тетрадь — на всю ширину окна: клавиатура как в основном режиме,
+     стан шире колонки уроков (запрос игрока: ноты не в кучу). */
+  width: 100%;
   flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4);
 }
 .primer-notebook[hidden] {
   display: none;
@@ -1037,7 +1040,7 @@ body.primer-open #hint {
 
 #primerNbCanvas {
   width: 100%;
-  max-width: 720px;
+  max-width: 1140px; /* ×1.5 от колонки уроков — стан вширь (запрос игрока) */
   /* Две строки стана: забирает свободную высоту тетради; при нехватке —
      минимальная высота, #primer скроллится (как на экране урока). */
   flex: 1 1 200px;
@@ -1046,7 +1049,8 @@ body.primer-open #hint {
   border-radius: var(--r-lg);
   background: var(--panel);
 }
-/* Клавиатура тетради — видима в фазе playing (ведёт notebook-screen.ts). */
+/* Клавиатура тетради — во всю ширину окна, как основной режим (запрос игрока).
+   max-width нет сознательно: контейнер full-width. */
 #primerNbKbCanvas {
   flex: 0 0 auto;
   width: 100%;
@@ -1054,7 +1058,6 @@ body.primer-open #hint {
   min-height: 150px;
   display: block;
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
   background: var(--panel);
 }
 #primerNbKbCanvas[hidden] {

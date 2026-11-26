@@ -370,8 +370,9 @@ export class NotationRenderer {
     const { ctx } = this;
     ctx.fillStyle = color;
     if (dim) {
-      // Приглушение будущих нот: alpha 0.4 — как disabled (design-system §2.3).
-      ctx.globalAlpha = 0.4;
+      // Приглушение будущих нот тетради: alpha 0.6 — читаемее, штили не
+      // «теряются» (0.4 как disabled оказался слишком бледным — запрос игрока).
+      ctx.globalAlpha = 0.6;
     }
     if (highlight) {
       // Лёгкое свечение подсветки (тень канваса) вокруг глифов ноты/паузы.
