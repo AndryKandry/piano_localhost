@@ -6,7 +6,7 @@
  * Партия руки — каскад: имя MIDI-трека → канал → сплит по питчу.
  */
 import { Midi } from "@tonejs/midi";
-import type { HandPart, Melody, Note, TempoChange } from "../core/types";
+import type { HandPart, Melody, Note, TempoChange, TimeSignature } from "../core/types";
 import {
   assembleMelody,
   clampVelocity,
@@ -22,6 +22,20 @@ const LEFT_NAME = /left|лев|bass|accomp/i;
 /** Историческая конвенция каналов (research 02): левая = 3, правая = 4. */
 const LEFT_CHANNEL = 3;
 const RIGHT_CHANNEL = 4;
+
+/**
+ * Размер такта из первого meta-события 0x58 (PIANO-22). @tonejs/midi собирает
+ * события всех треков и сортирует по тикам (Header.update), `timeSignature` —
+ * [числитель, знаменатель] числами (знаменатель уже 2^dd из SMF-байтов):
+ * 0x58 03 02 → [3, 4]. Нет событий или мусор в числах — undefined (4/4).
+ */
+function readTimeSignature(events: ReadonlyArray<{ timeSignature: number[] }>): TimeSignature | undefined {
+  const first = events[0]?.timeSignature;
+  if (!Array.isArray(first) || first.length < 2) return undefined;
+  const [numerator, denominator] = first as [number, number];
+  if (!Number.isInteger(numerator) || !Number.isInteger(denominator)) return undefined;
+  return { numerator, denominator };
+}
 
 /** Разброс питчей (P90−P10), с которого считаем, что руки вперемешку. */
 const SPLIT_SPREAD_SEMITONES = 24;
@@ -141,6 +155,8 @@ export function parseMidi(buffer: ArrayBuffer, options: MidiImportOptions = {}):
     tempoMap,
   };
   if (midi.header.name.trim() !== "") parts.title = midi.header.name.trim();
+  const timeSignature = readTimeSignature(midi.header.timeSignatures);
+  if (timeSignature !== undefined) parts.timeSignature = timeSignature;
   if (splitPoint !== undefined) parts.splitPoint = splitPoint;
   return assembleMelody(parts);
 }

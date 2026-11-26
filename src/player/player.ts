@@ -238,17 +238,21 @@ export class Player implements SchedulerHost {
   }
 
   /**
-   * План тиков: доли (четверти) темповой карты до конца мелодии. Только в
-   * обучении/автоплее с мелодией и включённым метрономом; в свободной игре
-   * темпа нет — тиков нет. За гейтом wait-mode план не урезается: гейт
-   * отсекает планирование в audioTimeFor, тик открывшейся доли звучит при
-   * открытии гейта (тот же механизм, что у нот автопартии).
+   * План тиков: доли (четверти) темповой карты до конца мелодии, акценты по
+   * размеру мелодии (timeSignature, PIANO-22; у данных до PIANO-22 его нет —
+   * метроном деградирует к 4/4). Только в обучении/автоплее с мелодией и
+   * включённым метрономом; в свободной игре темпа нет — тиков нет. За гейтом
+   * wait-mode план не урезается: гейт отсекает планирование в audioTimeFor,
+   * тик открывшейся доли звучит при открытии гейта (тот же механизм, что у
+   * нот автопартии).
    */
   private rebuildMetronome(): void {
     const usable =
       this.metronomeOn && this.metronome !== null && this.melody !== null && this.mode !== "free";
     this.scheduler.setTicks(
-      usable && this.melody ? metronomeTicks(this.melody.tempoMap, this.melody.durationSec) : [],
+      usable && this.melody
+        ? metronomeTicks(this.melody.tempoMap, this.melody.durationSec, this.melody.timeSignature)
+        : [],
     );
   }
 

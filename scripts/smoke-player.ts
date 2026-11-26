@@ -73,6 +73,7 @@ function melody(notes: readonly Note[], durationSec?: number): Melody {
     composer: "Smoke",
     notes: [...notes],
     tempoMap: [{ timeSec: 0, bpm: 120 }],
+    timeSignature: { numerator: 4, denominator: 4 },
     durationSec: durationSec ?? Math.max(1, ...notes.map((n) => n.startTimeSec + n.durationSec)) + 0.5,
   };
 }
@@ -381,7 +382,17 @@ function testBeatGrid(): void {
   ];
   assertEqual(metronomeTicks(broken, 2).length, 2, "битый BPM — сегмент пропущен, соседний тикает");
   assertEqual(metronomeTicks(map, 0).length, 0, "нулевая длительность — долей нет");
-  console.log("  OK: четверти темповой карты, смена BPM, акценты 4/4, деградация");
+
+  // Размер такта (PIANO-22): акцент — каждая numerator-я доля; знаменатель на
+  // сетку не влияет (тики по четвертям темповой карты).
+  const triple = metronomeTicks(map, 5, { numerator: 3, denominator: 4 });
+  assert(triple[0]?.accent === true && triple[3]?.accent === true && triple[6]?.accent === true, "3/4: акценты на долях 0, 1.5, 3 c (каждая 3-я)");
+  assert(!triple[1]?.accent && !triple[2]?.accent && !triple[4]?.accent && !triple[5]?.accent, "3/4: остальные доли без акцента");
+  const sameAsTriple = metronomeTicks(map, 5, { numerator: 3, denominator: 8 });
+  assertEqual(sameAsTriple.length, triple.length, "знаменатель не меняет сетку (тики по четвертям)");
+  const degenerate = metronomeTicks(map, 5, { numerator: 0, denominator: 4 });
+  assert(degenerate[4]?.accent === true, "битый размер (0) — деградация к 4/4");
+  console.log("  OK: четверти темповой карты, смена BPM, акценты 4/4 и 3/4, деградация");
 }
 
 function testMetronomeAutoplay(): void {
@@ -484,6 +495,61 @@ function testMetronomeWaitMode(): void {
   console.log("  OK: за гейтом тишина, тик гейта при открытии, дальше по плану");
 }
 
+// --- 6б. Метроном читает размер мелодии (PIANO-22) ---
+
+function testMetronomeTimeSignature(): void {
+  console.log("Метроном — размер мелодии:");
+  const clock = new FakeClock();
+  const engine = new MockEngine();
+  const metro = new MockMetronome();
+  const player = new Player(clock, engine, metro);
+  const tick = (): void => schedulerOf(player).tick();
+
+  // Трехдольная мелодия (3/4): акцент на долях 0 и 1.5, не как в 4/4.
+  const triple: Melody = { ...melody([note(60, 0.1, 0.3)], 2.2), timeSignature: { numerator: 3, denominator: 4 } };
+  player.loadMelody(triple);
+  player.setMode("autoplay");
+  player.setMetronomeOn(true);
+
+  clock.t = 100;
+  player.start();
+  tick(); // доля 0
+  clock.t = 100.45;
+  tick(); // доля 0.5
+  clock.t = 100.95;
+  tick(); // доля 1.0
+  clock.t = 101.45;
+  tick(); // доля 1.5
+  clock.t = 101.95;
+  tick(); // доля 2.0
+  assertEqual(metro.ticks.length, 5, "пять долей до конца мелодии 2.2 c");
+  assert(metro.ticks[0]?.accent === true, "3/4: доля 0 — акцент");
+  assert(!metro.ticks[1]?.accent && !metro.ticks[2]?.accent, "3/4: доли 0.5/1.0 без акцента");
+  assert(metro.ticks[3]?.accent === true, "3/4: доля 1.5 — новая доля (каждая 3-я, PIANO-22)");
+  assert(!metro.ticks[4]?.accent, "3/4: доля 2.0 без акцента");
+
+  // Контроль: та же сетка с 4/4 — акцент на 0 и 2.0, а 1.5 молчит.
+  const metro2 = new MockMetronome();
+  const player2 = new Player(clock, engine, metro2);
+  const tick2 = (): void => schedulerOf(player2).tick();
+  player2.loadMelody({ ...triple, timeSignature: { numerator: 4, denominator: 4 } });
+  player2.setMode("autoplay");
+  player2.setMetronomeOn(true);
+  clock.t = 100;
+  player2.start();
+  for (const step of [100, 100.45, 100.95, 101.45, 101.95]) {
+    clock.t = step;
+    tick2();
+  }
+  assertEqual(metro2.ticks.length, 5, "4/4: та же сетка долей");
+  assert(metro2.ticks[0]?.accent === true && metro2.ticks[4]?.accent === true, "4/4: акценты на долях 0 и 2.0");
+  assert(!metro2.ticks[3]?.accent, "4/4: доля 1.5 без акцента (в 3/4 была акцентной)");
+
+  player.dispose();
+  player2.dispose();
+  console.log("  OK: акценты по melody.timeSignature, 3/4 против 4/4");
+}
+
 async function main(): Promise<void> {
   testJudge();
   testSongTime();
@@ -491,6 +557,7 @@ async function main(): Promise<void> {
   testScheduler();
   testParties();
   testBeatGrid();
+  testMetronomeTimeSignature();
   testMetronomeAutoplay();
   testMetronomeWaitMode();
   console.log(`SMOKE OK: ${checks} проверок пройдено`);

@@ -42,6 +42,20 @@ export interface TempoChange {
   bpm: number;
 }
 
+/** Размер такта (GLOSSARY: размер) — числитель/знаменатель, как пишут в нотах. */
+export interface TimeSignature {
+  /** Сколько долей в такте: метроном акцентирует каждую numerator-ю долю. */
+  numerator: number;
+  /** Какая нота равна доле (4 — четверть, 8 — восьмая); на длину тиков не влияет. */
+  denominator: number;
+}
+
+/**
+ * Дефолтный размер 4/4: файлы без размера (MIDI без meta 0x58, MusicXML без
+ * <time>), встроенные мелодии и данные, сохранённые до PIANO-22.
+ */
+export const DEFAULT_TIME_SIGNATURE: TimeSignature = { numerator: 4, denominator: 4 };
+
 /** Мелодия — то, что лежит в библиотеке и играет плеер. */
 export interface Melody {
   id: string;
@@ -49,6 +63,12 @@ export interface Melody {
   composer: string;
   notes: Note[];
   tempoMap: TempoChange[];
+  /**
+   * Размер такта (PIANO-22): акценты метронома — каждая numerator-я доля.
+   * Импортёры берут его из файла (MIDI meta 0x58, MusicXML <time>), при
+   * отсутствии — 4/4 (assembleMelody ставит DEFAULT_TIME_SIGNATURE).
+   */
+  timeSignature: TimeSignature;
   /** Общая длительность в секундах (при множителе 1.0). */
   durationSec: number;
   /**
