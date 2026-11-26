@@ -285,6 +285,7 @@ const primer = initPrimerScreen({
   kbCanvas: requireEl<HTMLCanvasElement>("primerKbCanvas"),
   mapping, // раскладка/подписи клавиатуры карточек — от живого маппинга
   pressedPitches: () => input.pressedPitches(),
+  settings,
   onBack: () => setPrimerOpen(false),
 });
 primer.setAudio(engine); // показ ноты на карточке звучит тем же движком

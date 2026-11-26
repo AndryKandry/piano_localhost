@@ -127,11 +127,18 @@ function testRoundtrip(): void {
   reloaded.reset();
   assertEqual(reloaded.get().hitWindowMs, DEFAULT_SETTINGS.hitWindowMs, "reset вернул дефолт окна");
 
+  // Тетрадь: «Подсказка на клавиатуре» (notebookKeyHint, SPEC §4.10).
+  assertEqual(reloaded.get().notebookKeyHint, true, "дефолт подсказки — вкл");
+  reloaded.update({ notebookKeyHint: false });
+  assertEqual(reloaded.get().notebookKeyHint, false, "подсказка отключается патчем");
+  assertEqual(new SettingsStore(storage).get().notebookKeyHint, false, "подсказка переживает reload");
+  assertEqual(new SettingsStore(memoryStorage()).get().notebookKeyHint, true, "битый/пустой JSON → вкл");
+
   // Отсутствие хранилища (node/приватный режим) — сессия в памяти.
   const ephemeral = new SettingsStore(null);
   ephemeral.update({ volume: 0.25 });
   assertApprox(ephemeral.get().volume, 0.25, "без хранилища update работает в памяти");
-  console.log("  OK: persist/reload, частичные патчи, версии, битый JSON, безхранилищный режим");
+  console.log("  OK: persist/reload, частичные патчи, версии, битый JSON, подсказка тетради, безхранилищный режим");
 }
 
 // --- 3. Пересборка партий по порогу сплита ---

@@ -32,6 +32,7 @@ import { el, gameButton, requireEl } from "../ui/dom";
 import { PrimerEngine } from "./engine";
 import { LESSONS } from "./lessons";
 import { initNotebookScreen, type NotebookScreenApi } from "./notebook-screen";
+import type { SettingsStore } from "../core/settings";
 import { NOTEBOOK_LEVELS, notebookProgressKey } from "./notebook";
 import { PrimerProgressStore } from "./progress";
 import { PRIMER_PASS_PERCENT } from "./types";
@@ -67,6 +68,8 @@ export interface PrimerScreenDeps {
   mapping: PrimerKeyboardMapping;
   /** Зажатые сейчас питчи игровой клавиатуры (main: input.pressedPitches()). */
   pressedPitches(): ReadonlySet<number>;
+  /** Настройки: подсветка клавиатуры тетради и карточек (SPEC §4.8/4.10). */
+  settings: SettingsStore;
   /** «Назад к пианино»: main прячет экран и возвращает игру. */
   onBack(): void;
 }
@@ -104,6 +107,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     mapping: deps.mapping,
     pressedPitches: deps.pressedPitches,
     progress,
+    settings: deps.settings,
     onBack: showList,
   });
 

@@ -46,6 +46,7 @@ import {
 } from "./notebook";
 import { PrimerProgressStore } from "./progress";
 import { PRIMER_PASS_PERCENT } from "./types";
+import type { SettingsStore } from "../core/settings";
 import type { PrimerKeyboardMapping } from "./screen";
 
 export interface NotebookScreenDeps {
@@ -55,6 +56,8 @@ export interface NotebookScreenDeps {
   pressedPitches(): ReadonlySet<number>;
   /** Прогресс Азбуки (общий инстанс с экраном уроков — бейдж «Практики»). */
   progress: PrimerProgressStore;
+  /** Настройки: «Подсказка на клавиатуре» (notebookKeyHint, SPEC §4.10). */
+  settings: SettingsStore;
   /** «К списку уроков»: primer прячет тетрадь и показывает список. */
   onBack(): void;
 }
@@ -83,7 +86,7 @@ interface NotePosition {
 }
 
 export function initNotebookScreen(deps: NotebookScreenDeps): NotebookScreenApi {
-  const { progress } = deps;
+  const { progress, settings } = deps;
   const rootEl = requireEl<HTMLElement>("primerNotebook");
   const canvas = requireEl<HTMLCanvasElement>("primerNbCanvas");
   const kbCanvas = requireEl<HTMLCanvasElement>("primerNbKbCanvas");
@@ -93,10 +96,20 @@ export function initNotebookScreen(deps: NotebookScreenDeps): NotebookScreenApi 
   const resultEl = requireEl<HTMLElement>("primerNbResult");
   const newBtn = requireEl<HTMLButtonElement>("primerNbNew");
   const backBtn = requireEl<HTMLButtonElement>("primerNbBack");
+  const hintCheckbox = requireEl<HTMLInputElement>("primerNbHint");
 
   const renderer = new NotationRenderer(canvas);
   const kbRenderer = new KeyboardRenderer(kbCanvas);
   const judge = new NotebookJudge();
+
+  // «Подсказка на клавиатуре» (SPEC §4.10): вкл — текущая нота подсвечена
+  // «жми-сейчас»; выкл — игрок вспоминает клавишу сам (стан-подсветка остаётся).
+  hintCheckbox.checked = settings.get().notebookKeyHint;
+  hintCheckbox.addEventListener("change", () => {
+    settings.update({ notebookKeyHint: hintCheckbox.checked });
+    kbStateKey = null; // форсируем перерисовку клавиатуры без/с подсказкой
+    updateKeyboard();
+  });
 
   let active = false;
   let phase: NotebookPhase = "playing";
@@ -373,9 +386,11 @@ export function initNotebookScreen(deps: NotebookScreenDeps): NotebookScreenApi 
     }
 
     // «Жми-сейчас» — текущая нота тетради (wait-семантика чтения с листа).
+    // Переключатель «Подсказка на клавиатуре» (SPEC §4.10): выкл — игрок сам
+    // вспоминает клавишу по ноте на стане (подсветка стана остаётся).
     const next = new Set<number>();
     const expected = judge.expectedPitch;
-    if (expected !== null) next.add(expected);
+    if (expected !== null && settings.get().notebookKeyHint) next.add(expected);
 
     const pressed = deps.pressedPitches();
     const stateKey = `${[...pressed].sort().join(",")}|${[...next].sort().join(",")}`;

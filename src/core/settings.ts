@@ -28,6 +28,9 @@ export interface Settings {
   defaultPreset: PresetId;
   /** Показ счёта: живой в HUD и экран итогов попытки (SPEC §4.8). */
   showScore: boolean;
+  /** Тетрадь: подсветка «жми-сейчас» на клавиатуре (SPEC §4.10). Выкл — игрок
+      сам вспоминает клавишу по ноте на стане. */
+  notebookKeyHint: boolean;
 }
 
 export const SETTINGS_VERSION = 1;
@@ -42,6 +45,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   volume: 1,
   defaultPreset: "piano",
   showScore: true,
+  notebookKeyHint: true,
 };
 
 const STORAGE_KEY = "piano.settings";
@@ -74,6 +78,8 @@ export function normalizeSettings(raw: unknown): Settings {
       left: normalizeColor(party.left, DEFAULT_SETTINGS.partyColors.left),
     },
     showNoteNames: typeof src.showNoteNames === "boolean" ? src.showNoteNames : DEFAULT_SETTINGS.showNoteNames,
+    notebookKeyHint:
+      typeof src.notebookKeyHint === "boolean" ? src.notebookKeyHint : DEFAULT_SETTINGS.notebookKeyHint,
     hitWindowMs: clampNumber(src.hitWindowMs, HIT_WINDOW_MIN_MS, HIT_WINDOW_MAX_MS, DEFAULT_SETTINGS.hitWindowMs),
     volume: clampNumber(src.volume, 0, 1, DEFAULT_SETTINGS.volume),
     defaultPreset:
