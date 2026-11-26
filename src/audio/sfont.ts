@@ -38,7 +38,7 @@ export interface SfontSpec {
  */
 export const SFONT_PRESETS: Partial<Record<PresetId, SfontSpec>> = {
   epiano: { instrument: "electric_piano_1", releaseSec: 0.3, loadLoopData: false, gain: 1.15 },
-  guitar: { instrument: "acoustic_guitar_steel", releaseSec: 0.35, loadLoopData: false, gain: 1.7 },
+  guitar: { instrument: "acoustic_guitar_steel", releaseSec: 0.35, loadLoopData: false, gain: 2.3 },
   strings: { instrument: "string_ensemble_1", releaseSec: 0.5, loadLoopData: false, gain: 1.25 },
   flute: { instrument: "flute", releaseSec: 0.35, loadLoopData: true, gain: 1.25 },
 };
