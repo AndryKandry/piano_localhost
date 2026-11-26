@@ -926,6 +926,22 @@ body.primer-open #hint {
 #primerKbCanvas[hidden] {
   display: none;
 }
+/* Гриф-диаграмма гитарных уроков (research 06 §6 п.4): компактный канвас
+   под станом — третий слой карточки «стан ↔ гриф», ввода не принимает.
+   Центрируется колонкой урока (align-items: center); скрыта в нотных
+   уроках и на экране итога (ведёт primer/screen.ts). */
+#primerGfCanvas {
+  flex: 0 0 auto;
+  width: min(240px, 100%);
+  height: 150px;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+#primerGfCanvas[hidden] {
+  display: none;
+}
 .primer-prompt {
   margin: 4px 0 0;
   font-size: 16px;
@@ -1105,6 +1121,101 @@ body.primer-open #hint {
   font-size: var(--fs-md);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* --- Музыкальный диктант (PIANO-17): режим слуха внутри азбуки ---
+   Контейнер — по паттерну .primer-notebook; стана нет — ноты видеть нельзя
+   (проверяется слух), середина — статус/фидбек/итог-разбор, снизу клавиатура. */
+
+.primer-dictation {
+  /* Тот же каркас, что у тетради: вся ширина окна и РОВНО остаток высоты
+     (basis 0, min-height 0, flex-shrink обязателен) — клавиатура не уезжает
+     за нижний край, при нехватке высоты #primer скроллится. */
+  width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4);
+}
+.primer-dictation[hidden] {
+  display: none;
+}
+
+/* Топбар диктанта: уровень (сегмент), «Новый диктант», «Прослушать ещё раз»,
+   «Проверить» (primary — главное действие экрана), «К списку уроков». */
+.primer-dict-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.primer-dict-label {
+  font-size: var(--fs-md);
+  color: var(--muted);
+}
+
+/* Фидбек диктанта: пустая строка не резервирует высоту урока (2.6em) —
+   экран обязан влезать при низкой высоте окна (как у тетради). */
+.primer-dictation .primer-feedback {
+  min-height: 1.4em;
+}
+
+/* Итог-панель с разбором позиций (по завершении диктанта) — по паттерну
+   .primer-nb-result. Заголовок нейтральный: вердикт выражают фидбек и
+   строки позиций (DS §2.1: зелёный/красный — только вердикт). */
+.primer-dict-result {
+  width: 100%;
+  max-width: 560px;
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+.primer-dict-result[hidden] {
+  display: none;
+}
+.primer-dict-result-title {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  color: var(--text);
+}
+.primer-dict-pos {
+  margin: 0;
+  font-size: var(--fs-lg);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.primer-dict-pos.ok {
+  color: var(--ok);
+}
+.primer-dict-pos.error {
+  color: var(--error);
+}
+
+/* Клавиатура диктанта — во всю ширину окна, как у тетради и основного
+   режима (высота фиксированная, не vh — запрос игрока). margin-top: auto
+   прижимает её к нижнему краю: канвы стана нет, растягивать нечего. */
+#primerDictKbCanvas {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 150px;
+  margin-top: auto;
+  display: block;
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+#primerDictKbCanvas[hidden] {
+  display: none;
 }
 
 /* --- Моушн: reduced motion (§4) ---

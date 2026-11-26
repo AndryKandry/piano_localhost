@@ -287,9 +287,15 @@ const primer = initPrimerScreen({
   root: requireEl<HTMLElement>("primer"),
   canvas: requireEl<HTMLCanvasElement>("primerCanvas"),
   kbCanvas: requireEl<HTMLCanvasElement>("primerKbCanvas"),
+  gfCanvas: requireEl<HTMLCanvasElement>("primerGfCanvas"), // гриф гитарных уроков (research 06)
   mapping, // раскладка/подписи клавиатуры карточек — от живого маппинга
   pressedPitches: () => input.pressedPitches(),
   settings,
+  // Диктант (PIANO-17): ноты планируются на аудио-часах, как автоплей.
+  dictationPlayback: {
+    playNote: (pitch, velocity, timeSec, durationSec) => engine.playNote(pitch, velocity, timeSec, durationSec),
+    currentTime: () => clock.currentTime(),
+  },
   onBack: () => setPrimerOpen(false),
 });
 primer.setAudio(engine); // показ ноты на карточке звучит тем же движком

@@ -32,6 +32,8 @@ export interface Settings {
   /** Тетрадь: подсветка «жми-сейчас» на клавиатуре (SPEC §4.10). Выкл — игрок
       сам вспоминает клавишу по ноте на стане. */
   notebookKeyHint: boolean;
+  /** Метроном в обучении/автоплее (SPEC §4.3). Выкл по умолчанию. */
+  metronomeOn: boolean;
 }
 
 export const SETTINGS_VERSION = 1;
@@ -47,6 +49,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   defaultPreset: "piano",
   showScore: true,
   notebookKeyHint: true,
+  metronomeOn: false,
 };
 
 const STORAGE_KEY = "piano.settings";
@@ -87,6 +90,7 @@ export function normalizeSettings(raw: unknown): Settings {
         ? (preset as PresetId)
         : DEFAULT_SETTINGS.defaultPreset,
     showScore: typeof src.showScore === "boolean" ? src.showScore : DEFAULT_SETTINGS.showScore,
+    metronomeOn: typeof src.metronomeOn === "boolean" ? src.metronomeOn : DEFAULT_SETTINGS.metronomeOn,
   };
 }
 

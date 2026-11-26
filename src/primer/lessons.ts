@@ -12,14 +12,15 @@ import { pitchName, pitchNameRuFull, pitchNameRuStep } from "../core/layout";
 import { pitchToStaffPos, type StaffDuration } from "../notation/geometry";
 import type { ChoiceAnswer, PrimerCard, PrimerLesson, Rng, StaffItem } from "./types";
 
-// --- Случайность ---
+// --- Случайность (используется и гитарными уроками guitar-lessons.ts) ---
 
-function pick<T>(rng: Rng, arr: readonly T[]): T {
+/** Случайный элемент (по rng). */
+export function pick<T>(rng: Rng, arr: readonly T[]): T {
   return arr[Math.floor(rng() * arr.length)] as T;
 }
 
 /** Перемешанная копия (Фишер—Йетс по rng). */
-function shuffled<T>(rng: Rng, arr: readonly T[]): T[] {
+export function shuffled<T>(rng: Rng, arr: readonly T[]): T[] {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i -= 1) {
     const j = Math.floor(rng() * (i + 1));
@@ -98,7 +99,7 @@ function staffPositionName(pos: number): string {
 // --- Конструкторы карточек ---
 
 /** Западное имя + русская ступень в скобках: «B4 (си)» (GLOSSARY). */
-function namedPitch(pitch: number): string {
+export function namedPitch(pitch: number): string {
   return `${pitchName(pitch)} (${pitchNameRuStep(pitch)})`;
 }
 

@@ -8,7 +8,15 @@
  * описывает StaffItem, раскладку по x считает экран (screen.ts) через
  * notation/geometry. Терминология — GLOSSARY «Азбука».
  */
+import type { GuitarNote } from "../core/fretboard";
 import type { StaffDuration } from "../notation/geometry";
+
+/**
+ * Раздел Азбуки (GLOSSARY): «notation» — уроки по стану (звук по записанной
+ * высоте), «guitar» — раздел «Гитара» (research 06: звук показа — звучащая
+ * высота, октавой ниже записи; карточки с диаграммой грифа).
+ */
+export type PrimerSection = "notation" | "guitar";
 
 /** Функция случайности генераторов карточек (в тестах — детерминированная). */
 export type Rng = () => number;
@@ -81,6 +89,14 @@ export interface PrimerCard {
   answer: PrimerAnswer | null;
   /** Подпись под станом (имя ноты у «сыграй»-карточек). */
   label?: string;
+  /**
+   * Нота на грифе для диаграммы-подсказки (раздел «Гитара», research 06
+   * §6 п.4). Явное значение перекрывает словарь I позиции — например B4 =
+   * 3-я струна IV лад в уроке 3-й струны (в словаре B4 резолвится в
+   * открытую 2-ю, research 06 §4). Не задано — диаграмма строится из питча
+   * ответа клавишей.
+   */
+  fretboard?: GuitarNote | null;
 }
 
 // --- Урок ---
@@ -96,6 +112,8 @@ export interface PrimerLesson {
   order: number;
   title: string;
   description: string;
+  /** Раздел Азбуки; нет — «notation» (звук и метка карточек по умолчанию). */
+  section?: PrimerSection;
   generate(rng: Rng): PrimerCard[];
 }
 
