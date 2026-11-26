@@ -186,6 +186,7 @@ export function initNotebookScreen(deps: NotebookScreenDeps): NotebookScreenApi 
       // Отметка промаха на ноте, позиция не двигается (wait-семантика).
       setFeedback("Мимо — это другая клавиша. Смотри на подсвеченную ноту", "error");
       drawSheet();
+      updateStatus(); // счётчик промахов в статусе обновляется сразу
       updateKeyboard();
       return;
     }

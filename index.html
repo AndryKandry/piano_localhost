@@ -55,6 +55,9 @@
         <h3 id="primerLessonTitle" class="primer-lesson-title"></h3>
         <p id="primerLessonDesc" class="primer-lesson-desc"></p>
         <canvas id="primerCanvas"></canvas>
+        <!-- Гриф-диаграмма гитарных уроков (research 06): подсказка «струна.лад»,
+             ввода не принимает; видимость ведёт primer/screen.ts -->
+        <canvas id="primerGfCanvas" hidden></canvas>
         <p id="primerPrompt" class="primer-prompt"></p>
         <div id="primerChoices" class="primer-choices"></div>
         <p id="primerFeedback" class="primer-feedback"></p>
@@ -81,6 +84,46 @@
         <div id="primerNbResult" class="primer-nb-result" hidden></div>
         <!-- Клавиатура тетради: «жми-сейчас» — текущая нота (тот же рендер, что у карточек) -->
         <canvas id="primerNbKbCanvas" hidden></canvas>
+      </div>
+      <!-- Музыкальный диктант (PIANO-17): режим слуха внутри азбуки.
+           Стана нет — ноты видеть нельзя; статус/фидбек/итог-разбор + клавиатура. -->
+      <div id="primerDictation" class="primer-dictation" hidden>
+        <div class="primer-dict-bar">
+          <span class="primer-dict-label">Уровень:</span>
+          <div id="primerDictLevels" class="seg" role="group" aria-label="Уровень диктанта"></div>
+          <button id="primerDictNew" type="button" class="btn">Новый диктант</button>
+          <button id="primerDictListen" type="button" class="btn">Прослушать ещё раз</button>
+          <button id="primerDictCheck" type="button" class="btn primary">Проверить</button>
+          <button id="primerDictBack" type="button" class="btn">К списку уроков</button>
+        </div>
+        <p id="primerDictStatus" class="primer-score"></p>
+        <p id="primerDictFeedback" class="primer-feedback"></p>
+        <div id="primerDictResult" class="primer-dict-result" hidden></div>
+        <!-- Клавиатура диктанта: подсветка нажатий; «жми-сейчас» нет — слух! -->
+        <canvas id="primerDictKbCanvas" hidden></canvas>
+      </div>
+      <!-- Гитарная тетрадь (PIANO-20, SPEC §4.13): режим практики внутри азбуки
+           по паттерну тетради. Диапазон — I позиция гитары (E3–G♯5 записью);
+           подсказка на выбор: клавиатура («жми-сейчас»), гриф (диаграмма
+           «струна.лад») или нет. -->
+      <div id="primerGuitarNotebook" class="primer-gnotebook" hidden>
+        <div class="primer-gnb-bar">
+          <span class="primer-gnb-label">Уровень:</span>
+          <div id="primerGnbLevels" class="seg" role="group" aria-label="Уровень гитарной тетради"></div>
+          <span class="primer-gnb-label">Подсказка:</span>
+          <div id="primerGnbHints" class="seg" role="group" aria-label="Подсказка гитарной тетради"></div>
+          <button id="primerGnbNew" type="button" class="btn">Новая тетрадь</button>
+          <button id="primerGnbBack" type="button" class="btn">К списку уроков</button>
+        </div>
+        <p id="primerGnbStatus" class="primer-score"></p>
+        <p id="primerGnbFeedback" class="primer-feedback"></p>
+        <canvas id="primerGnbCanvas"></canvas>
+        <!-- Диаграмма грифа подсказки «Гриф»: кружок «струна.лад» текущей ноты;
+             видимость ведёт guitar-notebook-screen.ts -->
+        <canvas id="primerGnbGfCanvas" hidden></canvas>
+        <div id="primerGnbResult" class="primer-gnb-result" hidden></div>
+        <!-- Клавиатура тетради: нажатия видны всегда, «жми-сейчас» — в режиме «Клавиатура» -->
+        <canvas id="primerGnbKbCanvas" hidden></canvas>
       </div>
     </section>
     <script type="module" src="/src/main.ts"></script>

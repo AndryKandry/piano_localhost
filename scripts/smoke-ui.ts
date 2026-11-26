@@ -81,7 +81,11 @@ function testNormalize(): void {
     HIT_WINDOW_MIN_MS,
     "окно попадания клампится к минимуму 50 мс",
   );
-  console.log("  OK: клампы окна/громкости, пресет, цвета, не-объекты");
+  // Метроном (PIANO-15): absent в старых сохранениях → выкл, boolean проходит.
+  assertEqual(normalizeSettings(null).metronomeOn, DEFAULT_SETTINGS.metronomeOn, "метроном без записи → выкл");
+  assertEqual(normalizeSettings({ metronomeOn: true }).metronomeOn, true, "метроном persist true");
+  assertEqual(normalizeSettings({ metronomeOn: "да" }).metronomeOn, false, "не-boolean → дефолт выкл");
+  console.log("  OK: клампы окна/громкости, пресет, цвета, не-объекты, метроном");
 }
 
 // --- 2. Roundtrip: persist → новый store читает то же ---

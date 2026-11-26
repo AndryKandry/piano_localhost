@@ -23,17 +23,29 @@
  * Список уроков включает секцию «Практика» (SPEC §4.10): карточка «Нотной
  * тетради» открывает режим практики — notebook-screen.ts, живёт ВНУТРИ этого
  * экрана (тот же мост handlePitch/updateKeyboard, main про тетрадь не знает).
+ * Рядом секция «Слух» (PIANO-17): карточка «Музыкального диктанта» открывает
+ * dictation-screen.ts по тому же паттерну, и секция «Гитара» (research 06):
+ * уроки Г1–Г6 — своя цепочка гейтов, звук показа на звучащей высоте
+ * (cardSoundPitch), диаграмма грифа на #primerGfCanvas (updateGf); под
+ * уроками — карточка «Гитарной тетради» (PIANO-20): guitar-notebook-screen.ts
+ * по паттерну тетради, подсказка «Клавиатура | Гриф | Нет».
  */
 import { ensureBravura, NotationRenderer, NOTATION_INK } from "../notation/index";
-import { THIN_BARLINE_THICKNESS_SPACES, layoutMeasure } from "../notation/geometry";
-import { computeKeyboardLayout, type KeyboardLayout } from "../core/layout";
+import { THIN_BARLINE_THICKNESS_SPACES, layoutMeasure, pitchToStaffPos } from "../notation/geometry";
+import { computeKeyboardLayout, pitchName, type KeyboardLayout } from "../core/layout";
 import { KeyboardRenderer } from "../render/keyboard";
+import { FretboardRenderer } from "../render/fretboard";
 import { el, gameButton, requireEl } from "../ui/dom";
 import { PrimerEngine } from "./engine";
 import { LESSONS } from "./lessons";
+import { cardSoundPitch, fretboardHighlight, GUITAR_LESSONS } from "./guitar-lessons";
 import { initNotebookScreen, type NotebookScreenApi } from "./notebook-screen";
+import { initDictationScreen, type DictationScreenApi, type PrimerPlayback } from "./dictation-screen";
+import { initGuitarNotebookScreen, type GuitarNotebookScreenApi } from "./guitar-notebook-screen";
 import type { SettingsStore } from "../core/settings";
 import { NOTEBOOK_LEVELS, notebookProgressKey } from "./notebook";
+import { DICTATION_LEVELS, dictationProgressKey } from "./dictation";
+import { GUITAR_NOTEBOOK_LEVELS, guitarNotebookProgressKey } from "./guitar-notebook";
 import { PrimerProgressStore } from "./progress";
 import { PRIMER_PASS_PERCENT } from "./types";
 import type { PrimerCard, PrimerLesson, StaffItem, StaffNote } from "./types";
@@ -64,12 +76,16 @@ export interface PrimerScreenDeps {
   canvas: HTMLCanvasElement;
   /** Канвас экранной клавиатуры карточек (#primerKbCanvas, в разметке hidden). */
   kbCanvas: HTMLCanvasElement;
+  /** Канвас гриф-диаграммы гитарных уроков (#primerGfCanvas, в разметке hidden). */
+  gfCanvas: HTMLCanvasElement;
   /** Маппинг основной игры: раскладка и подписи клавиатуры карточек. */
   mapping: PrimerKeyboardMapping;
   /** Зажатые сейчас питчи игровой клавиатуры (main: input.pressedPitches()). */
   pressedPitches(): ReadonlySet<number>;
   /** Настройки: подсветка клавиатуры тетради и карточек (SPEC §4.8/4.10). */
   settings: SettingsStore;
+  /** Планируемый звук диктанта (engine.playNote + аудио-часы, PIANO-17). */
+  dictationPlayback: PrimerPlayback;
   /** «Назад к пианино»: main прячет экран и возвращает игру. */
   onBack(): void;
 }
@@ -80,6 +96,10 @@ export interface PrimerScreenApi {
   isOpen(): boolean;
   /** Открыть «Нотную тетрадь» (SPEC §4.10): список прячется, режим практики. */
   openNotebook(): Promise<void>;
+  /** Открыть «Музыкальный диктант» (PIANO-17): список прячется, режим слуха. */
+  openDictation(): Promise<void>;
+  /** Открыть «Гитарную тетрадь» (PIANO-20): список прячется, режим практики. */
+  openGuitarNotebook(): Promise<void>;
   /** Нажат питч игровой клавиатуры (судится карточкой или тетрадью). */
   handlePitch(pitch: number): void;
   setAudio(audio: PrimerAudio | null): void;
@@ -97,13 +117,30 @@ export interface PrimerScreenApi {
 const NOTE_SOUND_MS = 600;
 
 export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
-  const { root, canvas, kbCanvas } = deps;
+  const { root, canvas, kbCanvas, gfCanvas } = deps;
   const renderer = new NotationRenderer(canvas);
   const kbRenderer = new KeyboardRenderer(kbCanvas);
+  const gfRenderer = new FretboardRenderer(gfCanvas);
   const engine = new PrimerEngine();
   const progress = new PrimerProgressStore();
   /** «Нотная тетрадь» (SPEC §4.10) — режим практики внутри азбуки. */
   const notebook: NotebookScreenApi = initNotebookScreen({
+    mapping: deps.mapping,
+    pressedPitches: deps.pressedPitches,
+    progress,
+    settings: deps.settings,
+    onBack: showList,
+  });
+  /** «Музыкальный диктант» (PIANO-17) — режим слуха внутри азбуки. */
+  const dictation: DictationScreenApi = initDictationScreen({
+    mapping: deps.mapping,
+    pressedPitches: deps.pressedPitches,
+    progress,
+    playback: deps.dictationPlayback,
+    onBack: showList,
+  });
+  /** «Гитарная тетрадь» (PIANO-20) — режим практики внутри азбуки. */
+  const guitarNotebook: GuitarNotebookScreenApi = initGuitarNotebookScreen({
     mapping: deps.mapping,
     pressedPitches: deps.pressedPitches,
     progress,
@@ -126,6 +163,8 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
 
   let openFlag = false;
   let currentLesson: PrimerLesson | null = null;
+  /** Серия урока: цепочка гейтов и «следующий урок» — нотная или гитарная. */
+  let activeLessons: readonly PrimerLesson[] = LESSONS;
   let audio: PrimerAudio | null = null;
   let soundTimer: number | null = null;
   /** Питч, звучащий сейчас от карточки (глушится stopSound — без зависших нот). */
@@ -141,11 +180,21 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   let kbStateKey: string | null = null;
   /** Кэш видимости: DOM-атрибут hidden пишется только при смене. */
   let kbVisible = false;
+  /** Видимость гриф-диаграммы (гитарные уроки) — тот же паттерн кэша. */
+  let gfVisible = false;
 
   backBtn.addEventListener("click", () => deps.onBack());
   window.addEventListener("resize", () => {
+    if (dictation.isActive()) {
+      dictation.redraw();
+      return;
+    }
     if (notebook.isActive()) {
       notebook.redraw();
+      return;
+    }
+    if (guitarNotebook.isActive()) {
+      guitarNotebook.redraw();
       return;
     }
     if (openFlag && currentLesson !== null && engine.currentPhase !== "finished") showCurrentCard();
@@ -170,13 +219,19 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     }
   }
 
-  /** Показ ноты → короткое звучание (тот же движок, что и игра). */
+  /**
+   * Показ ноты → короткое звучание (тот же движок, что и игра). Питч —
+   * cardSoundPitch: гитарные уроки звучат октавой ниже записи (research 06
+   * §1), глушится тот же питч, что и звучал.
+   */
   function playCardSound(card: PrimerCard): void {
     stopSound();
+    const lesson = currentLesson;
     const note = card.staff.find((item): item is StaffNote => item.kind === "note");
-    if (!note || !audio) return;
-    audio.noteOn(note.pitch);
-    soundingPitch = note.pitch;
+    if (!note || !audio || !lesson) return;
+    const pitch = cardSoundPitch(lesson, note.pitch);
+    audio.noteOn(pitch);
+    soundingPitch = pitch;
     soundTimer = window.setTimeout(() => {
       soundTimer = null;
       if (soundingPitch !== null) {
@@ -192,13 +247,17 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     stopSound();
     currentLesson = null;
     notebook.close(); // из тетради вернулись к списку (SPEC §4.10: выход — как из урока)
+    dictation.close(); // из диктанта — так же (PIANO-17)
+    guitarNotebook.close(); // из гитарной тетради — так же (PIANO-20)
     listEl.hidden = false;
     lessonEl.hidden = true;
     listEl.replaceChildren();
     for (const lesson of LESSONS) {
-      listEl.appendChild(buildLessonCard(lesson));
+      listEl.appendChild(buildLessonCard(lesson, LESSONS));
     }
     listEl.appendChild(buildPracticeSection());
+    listEl.appendChild(buildEarSection());
+    listEl.appendChild(buildGuitarSection());
   }
 
   /**
@@ -233,8 +292,48 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     return section;
   }
 
-  function buildLessonCard(lesson: PrimerLesson): HTMLElement {
-    const unlocked = progress.isUnlocked(lesson, LESSONS);
+  /**
+   * Секция «Слух» (PIANO-17): под «Практикой» — карточка «Музыкального
+   * диктанта» с бейджем лучшего % по всем уровням (прогресс dictation-level-N).
+   */
+  function buildEarSection(): HTMLElement {
+    const section = el("div", "primer-practice");
+    section.appendChild(el("h3", "primer-section-title", "Слух"));
+    const best = Math.max(0, ...DICTATION_LEVELS.map((level) => progress.bestPercent(dictationProgressKey(level))));
+    const passed = best >= PRIMER_PASS_PERCENT;
+
+    const card = el("div", "mel-card primer-card");
+    const main = el("button", "mel-main");
+    main.type = "button";
+    main.addEventListener("mousedown", (event) => event.preventDefault()); // Space остаётся педалью
+
+    const titleRow = el("span", "mel-title-row");
+    titleRow.append(
+      el("span", "mel-title", "Музыкальный диктант (тренировка слуха)"),
+      el("span", `mel-badge ${best > 0 ? (passed ? "primer-badge-done" : "primer-badge-open") : "primer-badge-open"}`, best > 0 ? `${best}%` : "слух"),
+    );
+    const metaLine = el("span", "mel-meta");
+    metaLine.append(
+      el("span", undefined, "Услышь последовательность и повтори её нажатиями — 4 уровня: от 2 нот до 5 с диезами"),
+      el("span", undefined, best > 0 ? `Лучший: ${best}%` : "Попыток не было"),
+    );
+    main.append(titleRow, metaLine);
+    main.addEventListener("click", () => void openDictation());
+    card.appendChild(main);
+    section.appendChild(card);
+    return section;
+  }
+
+  /**
+   * Номер урока в списке и заголовке: нотные — «1»…«6», гитарные — «Г1»…«Г6»
+   * (research 06: своя последовательность, номера не смешиваются).
+   */
+  function lessonNumber(lesson: PrimerLesson): string {
+    return lesson.section === "guitar" ? `Г${lesson.order}` : String(lesson.order);
+  }
+
+  function buildLessonCard(lesson: PrimerLesson, series: readonly PrimerLesson[]): HTMLElement {
+    const unlocked = progress.isUnlocked(lesson, series);
     const best = progress.bestPercent(lesson.id);
     const passed = best >= PRIMER_PASS_PERCENT;
 
@@ -246,7 +345,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
 
     const titleRow = el("span", "mel-title-row");
     titleRow.append(
-      el("span", "mel-title", `${lesson.order}. ${lesson.title}`),
+      el("span", "mel-title", `${lessonNumber(lesson)}. ${lesson.title}`),
       el(
         "span",
         `mel-badge ${passed ? "primer-badge-done" : unlocked ? "primer-badge-open" : "primer-badge-locked"}`,
@@ -259,31 +358,121 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
       el("span", undefined, best > 0 ? `Лучший: ${best}%` : "Попыток не было"),
     );
     main.append(titleRow, metaLine);
-    main.addEventListener("click", () => void startLesson(lesson));
+    main.addEventListener("click", () => void startLesson(lesson, series));
     card.appendChild(main);
     return card;
   }
 
+  /**
+   * Секция «Гитара» (research 06): уроки Г1–Г6, независимая от нотной
+   * цепочка гейтов — гейты считаются по GUITAR_LESSONS. Под уроками —
+   * карточка «Гитарной тетради» (PIANO-20, SPEC §4.13) по паттерну секции
+   * «Практика»: бейдж лучшего % по всем уровням (прогресс
+   * guitar-notebook-level-N).
+   */
+  function buildGuitarSection(): HTMLElement {
+    const section = el("div", "primer-practice");
+    section.appendChild(el("h3", "primer-section-title", "Гитара"));
+    for (const lesson of GUITAR_LESSONS) {
+      section.appendChild(buildLessonCard(lesson, GUITAR_LESSONS));
+    }
+    section.appendChild(buildGuitarNotebookCard());
+    return section;
+  }
+
+  /** Карточка «Гитарной тетради» — практика чтения с листа в I позиции. */
+  function buildGuitarNotebookCard(): HTMLElement {
+    const section = el("div", "primer-practice");
+    const best = Math.max(0, ...GUITAR_NOTEBOOK_LEVELS.map((level) => progress.bestPercent(guitarNotebookProgressKey(level))));
+    const passed = best >= PRIMER_PASS_PERCENT;
+
+    const card = el("div", "mel-card primer-card");
+    const main = el("button", "mel-main");
+    main.type = "button";
+    main.addEventListener("mousedown", (event) => event.preventDefault()); // Space остаётся педалью
+
+    const titleRow = el("span", "mel-title-row");
+    titleRow.append(
+      el("span", "mel-title", "Гитарная тетрадь (чтение с листа)"),
+      el("span", `mel-badge ${best > 0 ? (passed ? "primer-badge-done" : "primer-badge-open") : "primer-badge-open"}`, best > 0 ? `${best}%` : "чтение"),
+    );
+    const metaLine = el("span", "mel-meta");
+    metaLine.append(
+      el("span", undefined, "Сыграй подряд 8 тактов в I позиции — 4 уровня: от открытых струн до всей I позиции с диезами. Подсказка: клавиатура, гриф или чистое чтение"),
+      el("span", undefined, best > 0 ? `Лучший: ${best}%` : "Попыток не было"),
+    );
+    main.append(titleRow, metaLine);
+    main.addEventListener("click", () => void openGuitarNotebook());
+    card.appendChild(main);
+    section.appendChild(card);
+    return section;
+  }
+
   // --- Экран урока ---
 
-  async function startLesson(lesson: PrimerLesson): Promise<void> {
+  async function startLesson(lesson: PrimerLesson, series: readonly PrimerLesson[]): Promise<void> {
     await fontReady.catch(() => undefined); // шрифт мог ещё грузиться (или упасть — рисуем как есть)
     if (!openFlag) return; // пока грузился шрифт, экран закрыли
     currentLesson = lesson;
+    activeLessons = series; // «следующий урок» на экране итога — из своей серии
     engine.start(lesson);
     listEl.hidden = true;
     lessonEl.hidden = false;
-    lessonTitle.textContent = `${lesson.order}. ${lesson.title}`;
+    lessonTitle.textContent = `${lessonNumber(lesson)}. ${lesson.title}`;
     lessonDesc.textContent = lesson.description;
     showCurrentCard();
   }
 
-  /** Пересоздать буфер канваса и задать геометрию стана под размер карточки. */
+  /**
+   * Диапазон карточки в позициях стана (notation/geometry): lowest/highest
+   * нота + подсветка вердикта (она дорисовывается отдельно). null — нот нет
+   * (итог урока, пустая карточка) — стан центрируется по умолчанию.
+   */
+  function cardPitchExtent(): { minPos: number; maxPos: number } | null {
+    if (engine.currentPhase === "finished") return null;
+    const card = engine.currentCard;
+    if (!card) return null;
+    const pitches = card.staff
+      .filter((item): item is StaffNote => item.kind === "note")
+      .map((note) => note.pitch);
+    const highlight = currentHighlightPitch();
+    if (highlight !== null) pitches.push(highlight);
+    if (pitches.length === 0) return null;
+    const positions = pitches.map((pitch) => pitchToStaffPos(pitch));
+    return {
+      minPos: Math.min(...positions),
+      maxPos: Math.max(...positions),
+    };
+  }
+
+  /**
+   * Пересоздать буфер канваса и задать геометрию стана под размер карточки.
+   * Базовая раскладка (стан на 30% высоты) рассчитана на ноты у стана; у
+   * гитарных уроков низкие ноты уходят на добавочные линейки до 3–4 под
+   * станом (E3 при видимых клавиатуре и грифе не влезает) — тогда staffSpace
+   * ужимается под диапазон, а стан поднимается, чтобы весь контент поместился.
+   */
   function syncCanvasGeometry(): void {
     renderer.resize();
     const { height } = renderer.size;
-    const staffSpace = Math.min(30, Math.max(14, Math.round(height / 8)));
-    renderer.setStaffGeometry(Math.round(height * 0.3), staffSpace);
+    const extent = cardPitchExtent();
+    let staffSpace = Math.min(30, Math.max(14, Math.round(height / 8)));
+    // top — y ВЕРХНЕЙ линии стана (pitchToY отсчитывает от TOP_LINE_POS = 8).
+    let top = Math.round(height * 0.3);
+    if (extent) {
+      // Контент в «спейсах»: над верхней линией, сам стан (4) и ниже нижней
+      // (clamp ≥ 0: ноты внутри стана контента сверху не добавляют).
+      const above = Math.max(0, (extent.maxPos - 8) / 2);
+      const below = Math.max(0, (0 - extent.minPos) / 2);
+      const contentBottom = top + 4 * staffSpace + below * staffSpace;
+      if (contentBottom + staffSpace * 0.6 > height) {
+        // Ужать staffSpace под диапазон и поднять стан (паддинг 0.6 сверху).
+        const units = above + 4 + below + 1.2;
+        staffSpace = Math.min(30, Math.max(10, Math.floor(height / units)));
+        top = Math.round(staffSpace * (0.6 + above));
+      }
+    }
+    renderer.setStaffGeometry(top, staffSpace);
   }
 
   function showCurrentCard(): void {
@@ -291,6 +480,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     if (!card) return;
     syncCanvasGeometry();
     drawCard(card, currentHighlightPitch());
+    updateGf(card);
 
     promptEl.textContent = card.prompt;
     choicesEl.replaceChildren();
@@ -301,7 +491,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
       showVerdict(engine.verdict);
     } else if (card.answer.type === "pitch") {
       feedbackEl.textContent = "";
-      choicesEl.appendChild(el("p", "primer-keyhint", "Ответ — клавишей пианино (диапазон C4–B5)"));
+      choicesEl.appendChild(el("p", "primer-keyhint", keyhintText()));
     } else {
       feedbackEl.textContent = "";
       const answer = card.answer;
@@ -321,6 +511,17 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     updateKeyboard();
   }
 
+  /**
+   * Подсказка диапазона ответа — по живому маппингу (октавный сдвиг Z/X
+   * меняет диапазон; у гитарного Г5 ответы ниже C4 — без сдвига не сыграть).
+   */
+  function keyhintText(): string {
+    const pitches = deps.mapping.pitches();
+    const low = pitches[0] ?? 60;
+    const high = pitches[pitches.length - 1] ?? 83;
+    return `Ответ — клавишей пианино (${pitchName(low)}–${pitchName(high)}), Z/X — октавный сдвиг`;
+  }
+
   function submitChoice(index: number): void {
     const verdict = engine.answerChoice(index);
     if (!verdict) return;
@@ -328,16 +529,29 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     disableChoices();
     showVerdict(verdict);
     const card = engine.currentCard;
-    if (card) drawCard(card, verdict.highlightPitch);
+    if (card) {
+      drawCard(card, verdict.highlightPitch);
+      updateGf(card);
+    }
     updateScoreLine();
     buildNav(card); // после вердикта появляется «Далее»
   }
 
   function handlePitch(pitch: number): void {
     if (!openFlag) return;
+    // Диктант (PIANO-17) — режим внутри азбуки: питчи судит DictationSession.
+    if (dictation.isActive()) {
+      dictation.handlePitch(pitch);
+      return;
+    }
     // Тетрадь (SPEC §4.10) — режим внутри азбуки: питчи судит NotebookJudge.
     if (notebook.isActive()) {
       notebook.handlePitch(pitch);
+      return;
+    }
+    // Гитарная тетрадь (PIANO-20) — режим внутри азбуки: тот же NotebookJudge.
+    if (guitarNotebook.isActive()) {
+      guitarNotebook.handlePitch(pitch);
       return;
     }
     if (currentLesson === null) return;
@@ -346,7 +560,10 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     disableChoices();
     showVerdict(verdict);
     const card = engine.currentCard;
-    if (card) drawCard(card, verdict.highlightPitch);
+    if (card) {
+      drawCard(card, verdict.highlightPitch);
+      updateGf(card);
+    }
     updateScoreLine();
     buildNav(card); // после вердикта появляется «Далее»
   }
@@ -410,10 +627,11 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     progress.recordResult(result);
     syncCanvasGeometry();
     drawStaffContent([], null, null); // чистый стан под итог
+    updateGf(null); // диаграмма грифа — только на карточках урока
 
     promptEl.textContent = "Урок завершён";
     choicesEl.replaceChildren();
-    const nextLesson = LESSONS.find((entry) => entry.order === lesson.order + 1) ?? null;
+    const nextLesson = activeLessons.find((entry) => entry.order === lesson.order + 1) ?? null;
     feedbackEl.className = `primer-feedback ${result.passed ? "ok" : "error"}`;
     feedbackEl.textContent =
       result.passed
@@ -424,10 +642,14 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     navEl.replaceChildren();
     const listBtn = gameButton("К списку уроков", showList, "btn");
     navEl.appendChild(listBtn);
-    const retryBtn = gameButton("Повторить урок", () => void startLesson(lesson), "btn primary");
+    const retryBtn = gameButton("Повторить урок", () => void startLesson(lesson, activeLessons), "btn primary");
     navEl.appendChild(retryBtn);
     if (result.passed && nextLesson) {
-      const nextBtn = gameButton(`Следующий урок: ${nextLesson.title}`, () => void startLesson(nextLesson), "btn");
+      const nextBtn = gameButton(
+        `Следующий урок: ${lessonNumber(nextLesson)}. ${nextLesson.title}`,
+        () => void startLesson(nextLesson, activeLessons),
+        "btn",
+      );
       navEl.appendChild(nextBtn);
     }
     listBtn.focus();
@@ -539,6 +761,42 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     }
   }
 
+  // --- Гриф-диаграмма гитарных уроков (research 06 §3, §6 п.4) ---
+
+  /**
+   * Диаграмма — третий слой карточки-подсказки «стан ↔ гриф», ввода не
+   * принимает и ничего не судит: вопрос и ответ остаются «стан → роя».
+   * Видна только в гитарных уроках (section «guitar») вне экрана итога.
+   */
+  function gfShouldBeVisible(): boolean {
+    return (
+      openFlag &&
+      currentLesson?.section === "guitar" &&
+      engine.currentPhase !== "finished" &&
+      !notebook.isActive() &&
+      !guitarNotebook.isActive() &&
+      !dictation.isActive()
+    );
+  }
+
+  /**
+   * Перерисовать диаграмму: до ответа — приглушённый общий гриф (dim); после
+   * вердикта и на фактах — кружок «струна.лад» с цифрой лада. card = null —
+   * скрыть (итог урока). Пересоздание буфера чистит канвас — рисуем всегда.
+   */
+  function updateGf(card: PrimerCard | null): void {
+    const visible = card !== null && gfShouldBeVisible();
+    if (visible !== gfVisible) {
+      gfVisible = visible;
+      gfCanvas.hidden = !visible;
+    }
+    if (!visible || !card) return;
+    gfRenderer.resize();
+    const reveal = card.answer === null || engine.currentPhase === "feedback";
+    const highlight = reveal ? fretboardHighlight(card) : null;
+    gfRenderer.render({ highlight, dim: highlight === null });
+  }
+
   // --- Клавиатура карточек (SPEC §4.9) ---
 
   /** Питч подсветки на стане: после вердикта — верная нота, до ответа — нет. */
@@ -552,7 +810,9 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
    * верную клавишу. Факты/выбор/список/итог — скрыта: стан забирает место.
    */
   function keyboardShouldBeVisible(): boolean {
+    if (dictation.isActive()) return false; // клавиатурой диктанта ведёт dictation-screen
     if (notebook.isActive()) return false; // клавиатурой тетради ведёт notebook-screen
+    if (guitarNotebook.isActive()) return false; // клавиатурой гитарной тетради ведёт её экран
     const card = engine.currentCard;
     return (
       openFlag &&
@@ -566,7 +826,9 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
 
   /** Стан перерисовать под актуальный размер (высота меняется с клавиатурой). */
   function resyncStaff(): void {
+    if (dictation.isActive()) return; // экраном диктанта ведёт dictation-screen
     if (notebook.isActive()) return; // станом тетради ведёт notebook-screen
+    if (guitarNotebook.isActive()) return; // станом гитарной тетради ведёт её экран
     if (!openFlag || currentLesson === null) return; // список уроков — стана нет
     syncCanvasGeometry();
     if (engine.currentPhase === "finished") {
@@ -582,11 +844,21 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     kbLayoutDirty = true;
     kbStateKey = null;
     notebook.invalidateKeyboardLayout();
+    dictation.invalidateKeyboardLayout();
+    guitarNotebook.invalidateKeyboardLayout();
   }
 
   function updateKeyboard(): void {
+    if (dictation.isActive()) {
+      dictation.updateKeyboard();
+      return;
+    }
     if (notebook.isActive()) {
       notebook.updateKeyboard();
+      return;
+    }
+    if (guitarNotebook.isActive()) {
+      guitarNotebook.updateKeyboard();
       return;
     }
     updateLessonKeyboard();
@@ -668,13 +940,53 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     await notebook.open();
   }
 
+  /**
+   * Режим «Музыкального диктанта» (PIANO-17): список уроков прячется,
+   * диктант ведёт свой статус и свою клавиатуру. Внутри открытого
+   * primer-экрана — main про диктант не знает (флаг primerOpen один).
+   * Стана и шрифта у диктанта нет — ждать Bravura не нужно.
+   */
+  async function openDictation(): Promise<void> {
+    if (!openFlag) return;
+    listEl.hidden = true;
+    lessonEl.hidden = true;
+    dictation.open();
+  }
+
+  /**
+   * Режим «Гитарной тетради» (PIANO-20): список уроков прячется, тетрадь
+   * рисует свой стан (I позиции), свою клавиатуру и свою диаграмму грифа.
+   * Внутри открытого primer-экрана — main про неё не знает.
+   */
+  async function openGuitarNotebook(): Promise<void> {
+    if (!openFlag) return;
+    await fontReady.catch(() => undefined); // стан рисуется только со шрифтом
+    if (!openFlag) return;
+    listEl.hidden = true;
+    lessonEl.hidden = true;
+    await guitarNotebook.open();
+  }
+
   function close(): void {
     if (!openFlag) return;
     openFlag = false;
     stopSound();
     notebook.close();
+    dictation.close();
+    guitarNotebook.close();
     root.hidden = true;
   }
 
-  return { open, close, isOpen, openNotebook, handlePitch, setAudio, updateKeyboard, invalidateKeyboardLayout };
+  return {
+    open,
+    close,
+    isOpen,
+    openNotebook,
+    openDictation,
+    openGuitarNotebook,
+    handlePitch,
+    setAudio,
+    updateKeyboard,
+    invalidateKeyboardLayout,
+  };
 }

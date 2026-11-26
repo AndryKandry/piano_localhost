@@ -26,6 +26,7 @@ import { computeKeyboardLayout, type KeyboardLayout } from "./core/layout";
 import { settings } from "./core/settings";
 import { PRESET_NAMES } from "./core/presets";
 import { AudioEngine } from "./audio/engine";
+import { Metronome } from "./audio/metronome";
 import { KeyboardInput } from "./input/keyboard";
 import { KeyboardRenderer } from "./render/keyboard";
 import { NoteFieldRenderer } from "./render/notefield";
@@ -52,8 +53,11 @@ clock.init();
 clock.attachUnlock();
 
 const engine = new AudioEngine(clock, settings.get().defaultPreset);
+// Метроном (SPEC §4.3): свой gain 0.5 перед мастером — «Громкость» действует
+// и на тики; вкл/выкл приходит из настроек ниже (applySettings).
+const metronome = new Metronome(clock.context(), engine.metronomeBus);
 const mapping = new PitchMapping();
-const player = new Player(clock, engine);
+const player = new Player(clock, engine, metronome);
 
 // --- HUD ---
 const hudPreset = requireEl<HTMLSpanElement>("hudPreset");
@@ -283,9 +287,15 @@ const primer = initPrimerScreen({
   root: requireEl<HTMLElement>("primer"),
   canvas: requireEl<HTMLCanvasElement>("primerCanvas"),
   kbCanvas: requireEl<HTMLCanvasElement>("primerKbCanvas"),
+  gfCanvas: requireEl<HTMLCanvasElement>("primerGfCanvas"), // гриф гитарных уроков (research 06)
   mapping, // раскладка/подписи клавиатуры карточек — от живого маппинга
   pressedPitches: () => input.pressedPitches(),
   settings,
+  // Диктант (PIANO-17): ноты планируются на аудио-часах, как автоплей.
+  dictationPlayback: {
+    playNote: (pitch, velocity, timeSec, durationSec) => engine.playNote(pitch, velocity, timeSec, durationSec),
+    currentTime: () => clock.currentTime(),
+  },
   onBack: () => setPrimerOpen(false),
 });
 primer.setAudio(engine); // показ ноты на карточке звучит тем же движком
@@ -381,6 +391,7 @@ function applySettings(): void {
   const current = settings.get();
   engine.setVolume(current.volume);
   player.setHitWindowMs(current.hitWindowMs);
+  player.setMetronomeOn(current.metronomeOn); // метроном: чекбокс панели пишет ту же настройку
   applyPartyColors(current.partyColors);
   keyboardStateKey = null; // подписи/цвета клавиш могли смениться — перерисовать
 }

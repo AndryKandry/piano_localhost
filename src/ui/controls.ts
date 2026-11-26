@@ -1,7 +1,7 @@
 /**
  * Панель управления текущей мелодией (SPEC §4.3, §4.4): старт/пауза/стоп/
  * «с начала», режим (свободная/обучение/автоплей), партии (обе/правая/левая),
- * wait-mode, множитель скорости 0.25–1.0, окно попадания ±мс.
+ * wait-mode, метроном, множитель скорости 0.25–1.0, окно попадания ±мс.
  *
  * Дублирует хоткеи очереди 3 (` , +/-, F2, F3) — оба источника меняют плеер,
  * поэтому панель каждый кадр синхронизируется с ним через update()
@@ -66,6 +66,17 @@ export function initControls(deps: ControlsDeps): ControlsApi {
   const waitLabel = el("label", "check-label", "Wait-mode");
   waitLabel.htmlFor = waitCheck.id;
 
+  // --- Метроном (SPEC §4.3): тики по долям в обучении/автоплее, persist в настройки ---
+  const metroCheck = el("input") as HTMLInputElement;
+  metroCheck.type = "checkbox";
+  metroCheck.id = "metronomeCheck";
+  metroCheck.addEventListener("change", () => {
+    player.setMetronomeOn(metroCheck.checked);
+    settings.update({ metronomeOn: metroCheck.checked });
+  });
+  const metroLabel = el("label", "check-label", "Метроном");
+  metroLabel.htmlFor = metroCheck.id;
+
   // --- Множитель скорости ---
   const multSlider = el("input") as HTMLInputElement;
   multSlider.type = "range";
@@ -105,6 +116,8 @@ export function initControls(deps: ControlsDeps): ControlsApi {
     wrapWithLabel("Партия:", handGroup),
     waitCheck,
     waitLabel,
+    metroCheck,
+    metroLabel,
     sliderGroup("Множитель", multSlider, multValue),
     sliderGroup("Окно", windowSlider, windowValue),
     wrapWithLabel("Мелодия:", songTitle),
@@ -116,6 +129,7 @@ export function initControls(deps: ControlsDeps): ControlsApi {
     mode: "",
     hand: "",
     wait: false as boolean,
+    metro: false as boolean,
     mult: "",
     window: "",
     start: null as boolean | null,
@@ -165,6 +179,10 @@ export function initControls(deps: ControlsDeps): ControlsApi {
       if (player.isWaitMode !== cache.wait) {
         cache.wait = player.isWaitMode;
         waitCheck.checked = player.isWaitMode;
+      }
+      if (player.isMetronomeOn !== cache.metro) {
+        cache.metro = player.isMetronomeOn;
+        metroCheck.checked = player.isMetronomeOn;
       }
 
       const multText = `×${player.speedMultiplier.toFixed(2)}`;

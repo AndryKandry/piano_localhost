@@ -3,6 +3,10 @@
  * (серии карточек, вердикты NameTheNote/выбором, стрик, итог по %), карточки
  * CountMeasure (доли такта), прогресс (persist → roundtrip, битый JSON,
  * best = max) и последовательность уроков (следующий открывается при ≥80%).
+ * Плюс раздел «Гитара» (research 06): реестр GUITAR_LESSONS (структура,
+ * пулы в словаре I позиции), звук показа cardSoundPitch (soundingMidi),
+ * диаграмма fretboardHighlight (словарь + явная подсказка B4=3.IV), гейты
+ * гитарной цепочки guitar-1..6 (независимой от нотной).
  * Запуск: npm run smoke:primer.
  *
  * Рандомизация генераторов — детерминированная rng-функция (mulberry32):
@@ -11,7 +15,16 @@
  */
 import { PrimerEngine } from "../src/primer/engine";
 import { LESSONS } from "../src/primer/lessons";
+import { cardSoundPitch, fretboardHighlight, GUITAR_LESSONS } from "../src/primer/guitar-lessons";
 import { PrimerProgressStore } from "../src/primer/progress";
+import {
+  FIRST_POSITION_WRITTEN_HIGH,
+  FIRST_POSITION_WRITTEN_LOW,
+  guitarToSounding,
+  isValidGuitarNote,
+  soundingMidi,
+  writtenToGuitar,
+} from "../src/core/fretboard";
 import {
   PRIMER_PASS_PERCENT,
   PRIMER_VERSION,
@@ -20,6 +33,7 @@ import {
   type LessonResult,
   type PrimerCard,
   type PrimerStorage,
+  type StaffNote,
 } from "../src/primer/types";
 import { DURATION_BEATS } from "../src/notation/geometry";
 
@@ -384,6 +398,234 @@ function testProgressStore(): void {
   console.log("  OK: пороги, best=max, версионирование, битый JSON, вся цепочка 6 уроков");
 }
 
+// --- 7. Раздел «Гитара» (research 06): структура уроков и словарь I позиции ---
+
+/** Первая нота на стане карточки (гитарные карточки всегда показывают ноту). */
+function staffNote(card: PrimerCard): StaffNote | null {
+  const found = card.staff.find((item): item is StaffNote => item.kind === "note");
+  return found ?? null;
+}
+
+function testGuitarLessonsData(): void {
+  console.log("Гитарные уроки (research 06 §6):");
+  assertEqual(GUITAR_LESSONS.length, 6, "шесть гитарных уроков Г1–Г6");
+  const ids = GUITAR_LESSONS.map((lesson) => lesson.id);
+  assertEqual(ids.join(","), "guitar-1,guitar-2,guitar-3,guitar-4,guitar-5,guitar-6", "ids guitar-1..6 по порядку");
+  GUITAR_LESSONS.forEach((lesson, i) => {
+    assertEqual(lesson.order, i + 1, `порядок Г${i + 1}`);
+    assertEqual(lesson.section, "guitar", `урок ${lesson.id} помечен разделом «guitar»`);
+    const cards = lesson.generate(mulberry32(300 + i));
+    assert(cards.length >= 6, `${lesson.id}: серия не пустая`);
+    assert(cards[0]?.answer === null, `${lesson.id}: начинается с факта`);
+    const answerable = cards.filter((card) => card.answer !== null);
+    assert(answerable.length >= 5, `${lesson.id}: ≥5 ответных карточек`);
+    for (const card of cards) {
+      if (card.fretboard) {
+        assert(isValidGuitarNote(card.fretboard), `${lesson.id}: подсказка грифа в I позиции`);
+      }
+      const note = staffNote(card);
+      if (note) {
+        assert(writtenToGuitar(note.pitch) !== null, `${lesson.id}: показ ${note.pitch} из словаря I позиции`);
+        assert(
+          note.pitch >= FIRST_POSITION_WRITTEN_LOW && note.pitch <= FIRST_POSITION_WRITTEN_HIGH,
+          `${lesson.id}: показ ${note.pitch} в диапазоне E3–G♯5`,
+        );
+      }
+      const answer = card.answer;
+      if (answer?.type === "pitch") {
+        const g = writtenToGuitar(answer.pitch);
+        assert(g !== null, `${lesson.id}: ответ ${answer.pitch} из словаря I позиции`);
+        // Звучащая высота ответа — в строе E2–G♯4 (research 06 §1).
+        const sounding = soundingMidi(answer.pitch);
+        assert(sounding >= 40 && sounding <= 68, `${lesson.id}: звучащая ${sounding} в строе`);
+        assertEqual(sounding, guitarToSounding(g as NonNullable<typeof g>), `${lesson.id}: звук = звук словарной ноты`);
+      } else if (answer?.type === "choice") {
+        assert(answer.options.length >= 2, `${lesson.id}: выбор не пустой`);
+        assert(new Set(answer.options).size === answer.options.length, `${lesson.id}: кнопки без дублей`);
+        assert(
+          answer.correctIndex >= 0 && answer.correctIndex < answer.options.length,
+          `${lesson.id}: correctIndex в диапазоне`,
+        );
+      }
+    }
+  });
+  console.log("  OK: 6 уроков, section=guitar, все питчи в словаре E3–G♯5, звук = словарная нота");
+}
+
+// --- 8. Г1 «Открытые струны»: все шесть, смешанные типы ответа ---
+
+function testGuitarOpenStrings(): void {
+  console.log("Г1 «Открытые струны»:");
+  const lesson = GUITAR_LESSONS[0] as (typeof GUITAR_LESSONS)[number];
+  const cards = lesson.generate(mulberry32(777));
+  const answerable = cards.filter((card) => card.answer !== null);
+  const shown = new Set<number>();
+  let stringCards = 0;
+  let pitchCards = 0;
+  for (const card of answerable) {
+    const note = staffNote(card);
+    assert(note !== null, "карточка Г1 показывает ноту на стане");
+    if (note) shown.add(note.pitch);
+    const answer = card.answer;
+    if (answer?.type === "choice") {
+      stringCards += 1;
+      assertEqual(answer.options.join(","), "1,2,3,4,5,6", "кнопки — номера струн 1–6");
+      const g = note ? writtenToGuitar(note.pitch) : null;
+      assert(g !== null, "нота Г1 в словаре");
+      assertEqual(answer.correctIndex, (g?.string ?? 0) - 1, "верная кнопка = номер струны по словарю");
+      const hint = fretboardHighlight(card);
+      assert(hint !== null && hint.string === g?.string && hint.fret === 0, "диаграмма — открытая струна");
+      assert((card.explanation.includes("октавой ниже")), "объяснение упоминает октаву вниз");
+    } else if (answer?.type === "pitch") {
+      pitchCards += 1;
+      assertEqual(answer.pitch, note?.pitch ?? -1, "ответ клавишей = записанная высота показанной ноты");
+    }
+  }
+  assertEqual(
+    [...shown].sort((a, b) => b - a).join(","),
+    "76,71,67,62,57,52",
+    "все шесть открытых спрошены (E5 B4 G4 D4 A3 E3)",
+  );
+  assert(stringCards > 0 && pitchCards > 0, "смешаны типы: «какая струна?» и «сыграй»");
+  // Факт про октаву: запись в скрипичном ключе, «8» не пишут.
+  const fact2 = cards[1];
+  assert((fact2?.explanation ?? "").includes("октавой ниже записи"), "факт Г1: звучит октавой ниже записи");
+  assert((fact2?.explanation ?? "").includes("8"), "факт Г1: «8» под ключом не пишут");
+  console.log(`  OK: 6 открытых струн, ${stringCards} карточек-выбор + ${pitchCards} клавишей, факт про октаву`);
+}
+
+// --- 9. Диаграмма грифа: словарь и явная подсказка B4=3.IV ---
+
+function testGuitarFretboardHints(): void {
+  console.log("Подсказки грифа:");
+  // Г4: B4 в уроке 3-й струны — явная подсказка 3-я струна IV лад (не словарная
+  // открытая 2-я); остальные ноты — строго по словарю.
+  const g4 = GUITAR_LESSONS[3] as (typeof GUITAR_LESSONS)[number];
+  let sawB4 = false;
+  for (let seed = 1; seed <= 30; seed += 1) {
+    for (const card of g4.generate(mulberry32(seed))) {
+      const answer = card.answer;
+      if (answer?.type !== "pitch") continue;
+      const hint = fretboardHighlight(card);
+      if (answer.pitch === 71) {
+        sawB4 = true;
+        assert(hint !== null && hint.string === 3 && hint.fret === 4, "B4 в Г4 — 3-я струна IV лад");
+      } else {
+        const dict = writtenToGuitar(answer.pitch);
+        assert(hint !== null && hint.string === dict?.string && hint.fret === dict?.fret, `${answer.pitch}: диаграмма по словарю`);
+      }
+    }
+  }
+  assert(sawB4, "Г4 за 30 seed'ов спросил B4");
+
+  // Факт Г3 объясняет дубликат B4 (открытая 2-я vs 3-я IV лад).
+  const g3 = GUITAR_LESSONS[2] as (typeof GUITAR_LESSONS)[number];
+  const g3Fact = g3.generate(mulberry32(5))[0];
+  assert((g3Fact?.explanation ?? "").includes("открытая 2-я и 3-я струна IV лад"), "факт Г3 называет оба места B4");
+
+  // Карточки без явной подсказки (Г6): диаграмма строится из словаря.
+  const g6 = GUITAR_LESSONS[5] as (typeof GUITAR_LESSONS)[number];
+  for (const card of g6.generate(mulberry32(42))) {
+    const answer = card.answer;
+    if (answer?.type !== "pitch") continue;
+    assertEqual(card.fretboard, undefined, "Г6 без явных подсказок");
+    const hint = fretboardHighlight(card);
+    const dict = writtenToGuitar(answer.pitch);
+    assert(hint !== null && hint.string === dict?.string && hint.fret === dict?.fret, "без подсказки — словарь");
+  }
+
+  // Факты и выбор без подсказки дают null (чистый гриф), а не мусор.
+  assertEqual(fretboardHighlight({ prompt: "", staff: [], explanation: "", answer: null }), null, "факт без подсказки → null");
+  console.log("  OK: B4=3.IV в Г4 по подсказке, остальные — словарь writtenToGuitar");
+}
+
+// --- 10. Звук показа: гитарные уроки — soundingMidi, нотные — запись ---
+
+function testGuitarSound(): void {
+  console.log("Звук показа карточек:");
+  assertEqual(soundingMidi(76), 64, "показ E5 (открытая 1-я) звучит 64 = E4");
+  assertEqual(soundingMidi(52), 40, "показ E3 (открытая 6-я) звучит 40 = E2");
+  const guitarLesson = GUITAR_LESSONS[0] as (typeof GUITAR_LESSONS)[number];
+  const notationLesson = LESSONS[0] as (typeof LESSONS)[number];
+  assertEqual(cardSoundPitch(guitarLesson, 76), 64, "гитарный урок: soundingMidi");
+  assertEqual(cardSoundPitch(notationLesson, 76), 76, "нотный урок: записанная высота");
+  // Вся гитарная серия: звук показа каждой ноты = soundingMidi.
+  for (const lesson of GUITAR_LESSONS) {
+    const cards = lesson.generate(mulberry32(9));
+    let sounded = 0;
+    for (const card of cards) {
+      const note = staffNote(card);
+      if (!note) continue;
+      assertEqual(cardSoundPitch(lesson, note.pitch), note.pitch - 12, `${lesson.id}: показ ${note.pitch} − 12`);
+      sounded += 1;
+    }
+    assert(sounded > 0, `${lesson.id}: есть показы ноты`);
+  }
+  console.log("  OK: guitar → written − 12 на всех показах, notation → written");
+}
+
+// --- 11. Движок и гейты гитарной цепочки (независимой от нотной) ---
+
+function testGuitarEngineAndGates(): void {
+  console.log("Движок и гейты гитарной цепочки:");
+  // Каждая гитарная серия проходится движком на 100% (выбор + клавиша вперемешку).
+  GUITAR_LESSONS.forEach((lesson, i) => {
+    const engine = new PrimerEngine(mulberry32(500 + i));
+    engine.start(lesson);
+    const result = runLesson(engine, () => true);
+    assertEqual(result.percent, 100, `${lesson.id}: серия проходится на 100%`);
+    assertEqual(result.passed, true, `${lesson.id}: пройден`);
+    assertEqual(result.lessonId, lesson.id, `итог с id ${lesson.id}`);
+  });
+
+  // Вердикт выбора струны: кнопка с номером по словарю — верная.
+  const engine = new PrimerEngine(mulberry32(600));
+  engine.start(GUITAR_LESSONS[0] as (typeof GUITAR_LESSONS)[number]);
+  while (engine.currentCard?.answer === null) engine.advance();
+  const card = engine.currentCard;
+  assert(card?.answer?.type === "choice", "первая ответная Г1 — выбор струны");
+  if (card?.answer?.type === "choice") {
+    const verdict = engine.answerChoice(card.answer.correctIndex);
+    assert(verdict?.correct === true, "номер струны по словарю засчитан");
+    assert((verdict?.explanation ?? "").includes("октавой ниже"), "объяснение упоминает октаву вниз");
+    assertEqual(verdict?.highlightPitch ?? null, null, "подсветка стана у выбора — через диаграмму, не питч");
+  }
+
+  // Гейты: Г-цепочка своя; нотный прогресс её не двигает (и наоборот).
+  const store = new PrimerProgressStore(memoryStorage());
+  const g1 = GUITAR_LESSONS[0] as (typeof GUITAR_LESSONS)[number];
+  const g2 = GUITAR_LESSONS[1] as (typeof GUITAR_LESSONS)[number];
+  const g3 = GUITAR_LESSONS[2] as (typeof GUITAR_LESSONS)[number];
+  const n1 = LESSONS[0] as (typeof LESSONS)[number];
+  const n2 = LESSONS[1] as (typeof LESSONS)[number];
+  assertEqual(store.isUnlocked(g1, GUITAR_LESSONS), true, "Г1 открыта всегда");
+  for (const lesson of GUITAR_LESSONS.slice(1)) {
+    assertEqual(store.isUnlocked(lesson, GUITAR_LESSONS), false, `${lesson.id} закрыт без прогресса`);
+  }
+  store.recordResult({ lessonId: g1.id, percent: 100, correct: 7, total: 7, bestStreak: 7, passed: true });
+  assertEqual(store.isUnlocked(g2, GUITAR_LESSONS), true, "Г1 ≥80% → Г2 открыта");
+  assertEqual(store.isUnlocked(g3, GUITAR_LESSONS), false, "Г3 ждёт Г2");
+  store.recordResult({ lessonId: n1.id, percent: 100, correct: 6, total: 6, bestStreak: 6, passed: true });
+  assertEqual(store.isUnlocked(g3, GUITAR_LESSONS), false, "нотный урок не открывает Г3");
+  assertEqual(store.isUnlocked(n2, LESSONS), true, "нотная цепочка отвечает на свой прогресс");
+  store.recordResult({ lessonId: g2.id, percent: 100, correct: 5, total: 5, bestStreak: 5, passed: true });
+  assertEqual(store.isUnlocked(g3, GUITAR_LESSONS), true, "Г2 ≥80% → Г3 открыта");
+
+  // Полная гитарная цепочка: каждое прохождение открывает ровно следующий.
+  const full = new PrimerProgressStore(memoryStorage());
+  for (const lesson of GUITAR_LESSONS) {
+    full.recordResult({ lessonId: lesson.id, percent: 100, correct: 8, total: 8, bestStreak: 8, passed: true });
+    for (const next of GUITAR_LESSONS) {
+      assertEqual(
+        full.isUnlocked(next, GUITAR_LESSONS),
+        next.order <= lesson.order + 1,
+        `после Г${lesson.order}: Г${next.order} ${next.order <= lesson.order + 1 ? "открыт" : "закрыт"}`,
+      );
+    }
+  }
+  console.log("  OK: серии проходятся, вердикт выбора, гейты guitar-1..6 независимы от нотных");
+}
+
 function main(): void {
   testLessonsData();
   testNameTheNoteVerdicts();
@@ -391,6 +633,11 @@ function main(): void {
   testChoiceCards();
   testPercentThreshold();
   testProgressStore();
+  testGuitarLessonsData();
+  testGuitarOpenStrings();
+  testGuitarFretboardHints();
+  testGuitarSound();
+  testGuitarEngineAndGates();
   console.log(`SMOKE OK: ${checks} проверок пройдено`);
 }
 
