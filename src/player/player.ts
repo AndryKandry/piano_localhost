@@ -13,11 +13,16 @@
  *
  * Партии (SPEC §4.4): ненажимаемая партия — автопартия, планируется
  * Scheduler'ом через engine.playNote. В автоплее автопартия — все ноты.
+ *
+ * Метроном (SPEC §4.3, PIANO-15): тики по долям (четвертям) темповой карты
+ * планируются тем же Scheduler'ом — гейт wait-mode и множитель скорости
+ * действуют на них как на автопартию. Включается только в обучении/автоплее
+ * с загруженной мелодией: в свободной игре темпа нет, тикать не по чему.
  */
 import type { TimeSource } from "../core/clock";
 import type { HandPart, Melody, Note } from "../core/types";
 import { Judge, type PressVerdict, type ScoreResult } from "./judge";
-import { Scheduler, type SchedulerHost } from "./scheduler";
+import { Scheduler, metronomeTicks, type SchedulerHost } from "./scheduler";
 
 /** Узкий интерфейс времени (живёт в core/clock): реэкспорт для потребителей плеера. */
 export type { TimeSource };
@@ -25,6 +30,12 @@ export type { TimeSource };
 /** Что плееру нужно от звука: только планируемая нота (ADR-002). */
 export interface AudioNoteTarget {
   playNote(pitch: number, velocity: number, timeSec: number, durationSec: number): void;
+}
+
+/** Что плееру нужно от метронома: тик на аудио-времени (SPEC §4.3). */
+export interface MetronomeTarget {
+  /** Тик в секундах аудио-часов; accent — 1-я доля такта (выше тоном). */
+  tick(timeSec: number, accent: boolean): void;
 }
 
 export type PlayerMode = "free" | "learn" | "autoplay";
@@ -54,6 +65,10 @@ export class Player implements SchedulerHost {
   private mode: PlayerMode = "free";
   private handMode: HandMode = "both";
   private waitMode = false;
+  /** Метроном вкл/выкл (чекбокс панели, persist SPEC §4.8). Дефолт — выкл. */
+  private metronomeOn = false;
+  /** Звук тиков (Metronome движка); null — метроном не подключён. */
+  private metronome: MetronomeTarget | null;
   private multiplier = 1;
   private running = false;
   private finished = false;
@@ -69,8 +84,11 @@ export class Player implements SchedulerHost {
   constructor(
     private readonly clock: TimeSource,
     engine: AudioNoteTarget,
+    metronome: MetronomeTarget | null = null,
   ) {
+    this.metronome = metronome;
     this.scheduler = new Scheduler(clock, engine, this);
+    this.scheduler.setMetronome(metronome);
     this.scheduler.start();
   }
 
@@ -122,6 +140,7 @@ export class Player implements SchedulerHost {
     this.anchorClock = this.clock.currentTime();
     this.rebuildJudgement();
     this.rebuildSchedule();
+    this.rebuildMetronome();
   }
 
   // --- Время (чистые функции, ADR-004 п.2) ---
@@ -189,7 +208,48 @@ export class Player implements SchedulerHost {
     this.anchorClock = this.clock.currentTime();
     this.rebuildJudgement();
     this.rebuildSchedule();
+    this.rebuildMetronome();
     this.scheduler.resync(this.anchorSong);
+  }
+
+  // --- Метроном (SPEC §4.3, PIANO-15) ---
+
+  /** Подключить/заменить звук метронома (null — отключить); сетка долей та же. */
+  setMetronome(target: MetronomeTarget | null): void {
+    this.metronome = target;
+    this.scheduler.setMetronome(target);
+    this.rebuildMetronome();
+    this.scheduler.resync(this.anchorSong);
+  }
+
+  /**
+   * Вкл/выкл метронома (чекбокс «Метроном»). Время и судью не трогает —
+   * только план тиков; course пересинхронизируется с текущей позицией.
+   */
+  setMetronomeOn(on: boolean): void {
+    if (this.metronomeOn === on) return;
+    this.metronomeOn = on;
+    this.rebuildMetronome();
+    this.scheduler.resync(this.anchorSong);
+  }
+
+  get isMetronomeOn(): boolean {
+    return this.metronomeOn;
+  }
+
+  /**
+   * План тиков: доли (четверти) темповой карты до конца мелодии. Только в
+   * обучении/автоплее с мелодией и включённым метрономом; в свободной игре
+   * темпа нет — тиков нет. За гейтом wait-mode план не урезается: гейт
+   * отсекает планирование в audioTimeFor, тик открывшейся доли звучит при
+   * открытии гейта (тот же механизм, что у нот автопартии).
+   */
+  private rebuildMetronome(): void {
+    const usable =
+      this.metronomeOn && this.metronome !== null && this.melody !== null && this.mode !== "free";
+    this.scheduler.setTicks(
+      usable && this.melody ? metronomeTicks(this.melody.tempoMap, this.melody.durationSec) : [],
+    );
   }
 
   /** Нажимаемая ли партия ноты в текущем режиме (SPEC §4.4). */

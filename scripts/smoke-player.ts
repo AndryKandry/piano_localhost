@@ -1,16 +1,18 @@
 /**
  * Smoke-проверка логики очереди 3 без браузера: судья, чистая функция
- * позиции, wait-mode, планировщик, режимы партий. Запуск: npm run smoke:player.
+ * позиции, wait-mode, планировщик, режимы партий, метроном (PIANO-15).
+ * Запуск: npm run smoke:player.
  *
  * AudioContext в node недоступен — время подменяется фиктивным часом
- * (TimeSource), звук — моком AudioNoteTarget. Планировщик тикается вручную:
- * setInterval не срабатывает внутри синхронного теста. Рендер (canvas) здесь
- * не тестируется: он чистый потребитель тех же данных.
+ * (TimeSource), звук — моком AudioNoteTarget, метроном — моком
+ * MetronomeTarget. Планировщик тикается вручную: setInterval не срабатывает
+ * внутри синхронного теста. Рендер (canvas) здесь не тестируется: он чистый
+ * потребитель тех же данных.
  */
 import { Judge, groupNotes, DEFAULT_HIT_WINDOW_SEC, MIN_HIT_WINDOW_SEC, MAX_HIT_WINDOW_SEC } from "../src/player/judge";
 import { Player, MIN_MULTIPLIER, MAX_MULTIPLIER } from "../src/player/player";
-import { Scheduler, SCHEDULER_LOOKAHEAD_SEC } from "../src/player/scheduler";
-import type { Melody, Note } from "../src/core/types";
+import { Scheduler, SCHEDULER_LOOKAHEAD_SEC, metronomeTicks } from "../src/player/scheduler";
+import type { Melody, Note, TempoChange } from "../src/core/types";
 
 let checks = 0;
 function assert(condition: boolean, message: string): void {
@@ -44,6 +46,14 @@ class MockEngine {
   readonly calls: PlayedNote[] = [];
   playNote(pitch: number, velocity: number, timeSec: number, durationSec: number): void {
     this.calls.push({ pitch, velocity, timeSec, durationSec });
+  }
+}
+
+/** Мок метронома (MetronomeTarget): тики записываются с их аудио-временем. */
+class MockMetronome {
+  readonly ticks: Array<{ timeSec: number; accent: boolean }> = [];
+  tick(timeSec: number, accent: boolean): void {
+    this.ticks.push({ timeSec, accent });
   }
 }
 
@@ -345,12 +355,144 @@ function testParties(): void {
   console.log("  OK: right/both/autoplay/free — состав автопартии корректен");
 }
 
+// --- 6. Метроном (PIANO-15): сетка долей, автоплей, wait-mode ---
+
+function testBeatGrid(): void {
+  console.log("Метроном — сетка долей:");
+  // 120 BPM до 2 c (доля 0.5 c), затем 60 BPM (доля 1 c) до 5 c.
+  const map: TempoChange[] = [
+    { timeSec: 0, bpm: 120 },
+    { timeSec: 2, bpm: 60 },
+  ];
+  const ticks = metronomeTicks(map, 5);
+  assertEqual(ticks.length, 7, "4 доли по 120 BPM + 3 по 60 BPM");
+  assertApprox(ticks[1]?.timeSec ?? -1, 0.5, "вторая доля на 0.5 c");
+  assertApprox(ticks[4]?.timeSec ?? -1, 2, "смена BPM — доля на начале сегмента");
+  assertApprox(ticks[6]?.timeSec ?? -1, 4, "последняя доля строго до конца мелодии");
+  assert(ticks[0]?.accent === true, "доля 1 такта — акцент (2000 Гц)");
+  assert(ticks[4]?.accent === true, "каждая 4-я доля — акцент (4/4)");
+  assert(!ticks[1]?.accent && !ticks[3]?.accent && !ticks[5]?.accent, "остальные доли без акцента (800 Гц)");
+
+  // Деградация: пустая карта — дефолтные 120 BPM; битый BPM — сегмент без долей.
+  assertEqual(metronomeTicks([], 2).length, 4, "пустая темповая карта — 120 BPM");
+  const broken: TempoChange[] = [
+    { timeSec: 0, bpm: 0 },
+    { timeSec: 1, bpm: 120 },
+  ];
+  assertEqual(metronomeTicks(broken, 2).length, 2, "битый BPM — сегмент пропущен, соседний тикает");
+  assertEqual(metronomeTicks(map, 0).length, 0, "нулевая длительность — долей нет");
+  console.log("  OK: четверти темповой карты, смена BPM, акценты 4/4, деградация");
+}
+
+function testMetronomeAutoplay(): void {
+  console.log("Метроном — автоплей:");
+  const clock = new FakeClock();
+  const engine = new MockEngine();
+  const metro = new MockMetronome();
+  const player = new Player(clock, engine, metro);
+  const tick = (): void => schedulerOf(player).tick();
+
+  // 2.2 c при 120 BPM → доли 0, 0.5, 1, 1.5, 2; акценты — индексы 0 и 4.
+  player.loadMelody(melody([note(60, 0.1, 0.3)], 2.2));
+  player.setMode("autoplay");
+  player.setMetronomeOn(true);
+  assertEqual(metro.ticks.length, 0, "до старта время не идёт — тиков нет");
+
+  clock.t = 100;
+  player.start();
+  tick();
+  assertEqual(metro.ticks.length, 1, "доля 0 — прямо сейчас, на аудио-часах");
+  assertApprox(metro.ticks[0]?.timeSec ?? -1, 100, "тик спланирован на текущем аудио-времени");
+  assertEqual(metro.ticks[0]?.accent, true, "1-я доля такта — акцент");
+
+  clock.t = 100.45; // горизонт 100.55 ≥ 100.5
+  tick();
+  assertEqual(metro.ticks.length, 2, "следующая доля вошла в окно lookahead");
+  assertApprox(metro.ticks[1]?.timeSec ?? -1, 100.5, "абсолютное время доли на аудио-часах");
+  assertEqual(metro.ticks[1]?.accent, false, "не первая доля — без акцента");
+
+  // Множитель скорости: якорь (song 0.45, wall 100.45), доля song 1 → wall 101.55.
+  player.setMultiplier(0.5);
+  clock.t = 101.5;
+  tick();
+  assertEqual(metro.ticks.length, 3, "доля вошла в lookahead при ×0.5");
+  assertApprox(metro.ticks[2]?.timeSec ?? -1, 101.55, "множитель растягивает доли по стене");
+
+  // Выключение на ходу — новые тики не планируются.
+  player.setMetronomeOn(false);
+  clock.t = 102;
+  tick();
+  assertEqual(metro.ticks.length, 3, "выключенный метроном молчит");
+
+  // Свободная игра: темпа нет — тиков нет даже с включённым чекбоксом.
+  player.setMetronomeOn(true);
+  player.setMode("free");
+  clock.t = 102.4;
+  tick();
+  assertEqual(metro.ticks.length, 3, "в свободной игре метроном не тикает");
+
+  player.dispose();
+  console.log("  OK: доли на аудио-часах, акценты, множитель, выкл на ходу, free");
+}
+
+function testMetronomeWaitMode(): void {
+  console.log("Метроном — wait-mode:");
+  const clock = new FakeClock();
+  const engine = new MockEngine();
+  const metro = new MockMetronome();
+  const player = new Player(clock, engine, metro);
+  const tick = (): void => schedulerOf(player).tick();
+
+  // Правая рука: C4 на song 1 — гейт wait-mode; левая партия (автопартия) за ним.
+  player.loadMelody(melody([note(60, 1, 0.5), note(48, 1.5, 0.4, "left")], 3));
+  player.setMode("learn");
+  player.setHandMode("right");
+  player.setWaitMode(true);
+  player.setMetronomeOn(true);
+
+  clock.t = 100;
+  player.start();
+  tick();
+  assertEqual(metro.ticks.length, 1, "доля 0 спланирована на старте");
+
+  clock.t = 100.45;
+  tick();
+  assertEqual(metro.ticks.length, 2, "доля 0.5 спланирована");
+
+  // Доля song 1.0 = гейт: время замерло — тики (и ноты) за гейтом не планируются.
+  clock.t = 101.7; // «думал»: raw давно за гейтом, позиция стоит на 1.0
+  tick();
+  assertEqual(metro.ticks.length, 2, "тик за гейтом wait-mode не планируется");
+  assertEqual(engine.calls.length, 0, "нота автопартии за гейтом тоже молчит");
+
+  // Открытие гейта: нажатие в момент, когда позиция замерла НА гейте, — тик
+  // той же доли song 1 звучит немедленно (якорь = гейт).
+  assertEqual(player.onKeyPress(60)?.kind, "hit", "C4 открывает гейт");
+  tick();
+  assertEqual(metro.ticks.length, 3, "тик гейта прозвучал при открытии");
+  assertApprox(metro.ticks[2]?.timeSec ?? -1, 101.7, "немедленно по аудио-часам, не в будущем");
+  assertEqual(metro.ticks[2]?.accent, false, "song 1 — не первая доля такта");
+
+  // Дальше обычное планирование: доля song 1.5 вместе с нотой левой партии.
+  clock.t = 102.2;
+  tick();
+  assertEqual(engine.calls.length, 1, "нота левой партии спланирована после гейта");
+  assertEqual(metro.ticks.length, 4, "доля song 1.5 спланирована");
+  assertApprox(metro.ticks[3]?.timeSec ?? -1, 102.2, "тик доли на аудио-часах");
+
+  player.dispose();
+  console.log("  OK: за гейтом тишина, тик гейта при открытии, дальше по плану");
+}
+
 async function main(): Promise<void> {
   testJudge();
   testSongTime();
   testWaitMode();
   testScheduler();
   testParties();
+  testBeatGrid();
+  testMetronomeAutoplay();
+  testMetronomeWaitMode();
   console.log(`SMOKE OK: ${checks} проверок пройдено`);
 }
 
