@@ -17,11 +17,17 @@ export type SamplerLoadNotify = (state: LoadState, progress: number | null) => v
 /** Release-фейд сэмпла, сек (research 01 п.5: естественное затухание 0.3–0.6). */
 const DECAY_TIME_SEC = 0.4;
 
+/** Запущенный голос: StopFn smplr + аудио-время старта (для отмены запланированных). */
+interface ScheduledStop {
+  stop: (time?: number) => void;
+  startAt: number;
+}
+
 export class SamplerSource implements InstrumentSource {
   readonly presetId: PresetId = "piano";
   private piano: SmplrPiano | null = null;
-  /** StopFn на каждый запущенный голос, стек по питчу (репичи). */
-  private readonly stops = new Map<number, Array<(time?: number) => void>>();
+  /** Запущенные голоса, стек по питчу (репичи). */
+  private readonly stops = new Map<number, ScheduledStop[]>();
 
   constructor(ctx: AudioContext, notify: SamplerLoadNotify, destination?: AudioNode) {
     const piano = SplendidGrandPiano(ctx, {
@@ -45,24 +51,44 @@ export class SamplerSource implements InstrumentSource {
     if (!this.piano) return;
     const stop = this.piano.start({ note: pitch, velocity, time: timeSec });
     const stack = this.stops.get(pitch) ?? [];
-    stack.push(stop);
+    stack.push({ stop, startAt: timeSec });
     this.stops.set(pitch, stack);
   }
 
   noteOff(pitch: number, timeSec: number, _fadeSec: number): void {
     // smplr применяет собственный фейд (decayTime) — сэмпл не обрывается.
     const stack = this.stops.get(pitch);
-    const stop = stack?.pop();
-    if (!stop || !stack) return;
-    stop(timeSec);
+    const voice = stack?.pop();
+    if (!voice || !stack) return;
+    voice.stop(timeSec);
     if (stack.length === 0) this.stops.delete(pitch);
   }
 
   allOff(timeSec: number, _fadeSec: number): void {
     for (const stack of this.stops.values()) {
-      for (const stop of stack) stop(timeSec);
+      for (const voice of stack) voice.stop(timeSec);
     }
     this.stops.clear();
+  }
+
+  /**
+   * Отмена запланированных голосов (PIANO-23). StopFn smplr до времени старта
+   * отменяет голос (doc SmplrImpl.start: «cancels the note if it hasn't played
+   * yet»): снимает недиспатченное событие планировщика, а уже созданному
+   * Voice.stop(t ≤ startAt) делает source.stop(t) + cancelScheduledValues —
+   * по спецификации Web Audio источник со stop ≤ start не зазвучит.
+   * StopFn() без аргумента = мгновенно (now ≤ startAt отменённых голосов).
+   */
+  cancelScheduled(fromSec: number): void {
+    for (const [pitch, stack] of this.stops) {
+      const kept = stack.filter((voice) => {
+        if (voice.startAt < fromSec) return true; // уже звучит — не трогаем
+        voice.stop();
+        return false;
+      });
+      if (kept.length === 0) this.stops.delete(pitch);
+      else this.stops.set(pitch, kept);
+    }
   }
 
   dispose(): void {

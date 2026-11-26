@@ -52,6 +52,7 @@ function melody(notes: readonly Note[]): Melody {
     composer: "Smoke",
     notes: [...notes],
     tempoMap: [{ timeSec: 0, bpm: 120 }],
+    timeSignature: { numerator: 4, denominator: 4 },
     durationSec: 4,
     splitPoint: 60,
   };

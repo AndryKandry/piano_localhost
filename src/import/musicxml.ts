@@ -3,11 +3,12 @@
  * OSMD (1.4 MB рендерер нотных листов) не берём — он про отрисовку, не про ноты.
  *
  * Покрытие (базовое, растёт по нужде): score-partwise и score-timewise,
- * attributes/divisions, тактовые backup/forward, паузы, аккорды (<chord/>),
- * питч step+alter+octave → MIDI, рука из <staff> (1=правая, 2=левая),
- * голос <voice> как запасной сигнал, темп из <sound tempo="..."> (дефолт 120).
+ * attributes/divisions, размер <time> (beats/beat-type, PIANO-22), тактовые
+ * backup/forward, паузы, аккорды (<chord/>), питч step+alter+octave → MIDI,
+ * рука из <staff> (1=правая, 2=левая), голос <voice> как запасной сигнал,
+ * темп из <sound tempo="..."> (дефолт 120).
  */
-import type { HandPart, Melody, Note, TempoChange } from "../core/types";
+import type { HandPart, Melody, Note, TempoChange, TimeSignature } from "../core/types";
 import {
   DEFAULT_BPM,
   IMPORT_VELOCITY,
@@ -133,6 +134,26 @@ function readComposer(root: Element): string | undefined {
 }
 
 /**
+ * Размер такта из первого <attributes><time> партитуры (PIANO-22): пара
+ * <beats>/<beat-type>, как у «3/4» → {3, 4}. Составные размеры (несколько
+ * <beats> подряд) не разбираем — берём первую пару. Нет/битое → undefined
+ * (assembleMelody поставит 4/4).
+ */
+function readTimeSignature(root: Element): TimeSignature | undefined {
+  const time = root.getElementsByTagName("time")[0];
+  if (!time) return undefined;
+  const numerator = intOf(time, "beats");
+  const denominator = intOf(time, "beat-type");
+  if (
+    numerator === undefined || denominator === undefined ||
+    !Number.isInteger(numerator) || !Number.isInteger(denominator)
+  ) {
+    return undefined;
+  }
+  return { numerator, denominator };
+}
+
+/**
  * Разбирает MusicXML (строка) во внутреннюю модель. Бросает ImportError
  * с указанием места, если XML битый, это не MusicXML или нот нет.
  */
@@ -232,6 +253,8 @@ export function parseMusicXml(source: string, options: MusicXmlImportOptions = {
   if (title) parts.title = title;
   const composer = readComposer(root);
   if (composer) parts.composer = composer;
+  const timeSignature = readTimeSignature(root);
+  if (timeSignature !== undefined) parts.timeSignature = timeSignature;
   return assembleMelody(parts);
 }
 

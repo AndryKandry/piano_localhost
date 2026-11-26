@@ -13,7 +13,7 @@
  * (инвариант GLOSSARY #2).
  */
 import type { TimeSource } from "../core/clock";
-import type { Note, TempoChange } from "../core/types";
+import { DEFAULT_TIME_SIGNATURE, type Note, type TempoChange, type TimeSignature } from "../core/types";
 import type { AudioNoteTarget, MetronomeTarget } from "./player";
 
 /** Чего планирует плеер (реализуется Player). */
@@ -39,12 +39,6 @@ export interface MetronomeTickPlan {
   accent: boolean;
 }
 
-/**
- * Размер такта метронома: 4/4. Размера файла в модели Melody нет (v1 его не
- * импортирует), MIDI-дефолт — 4/4; с появлением timeSignature в модели —
- * заменить на данные мелодии.
- */
-export const METRONOME_BEATS_PER_BAR = 4;
 /** Темп, когда темповая карта пуста (тот же дефолт, что import/shared). */
 const FALLBACK_BPM = 120;
 /** Предохранитель: битая карта (bpm→∞) не должна порождать миллионы тиков. */
@@ -53,16 +47,22 @@ const MAX_TICKS = 20000;
 /**
  * Сетка долей метронома по темповой карте: четверти, до untilSec. Смена BPM
  * перезапускает доли от момента смены — как ноты, чьё время посчитано по той
- * же карте. Акцент — каждая beatsPerBar-я доля по счёту от начала.
+ * же карте. Акцент — каждая numerator-я доля по счёту от начала (размер
+ * мелодии, PIANO-22); знаменатель на длину доли не влияет — тики по четвертям
+ * темповой карты (вопрос длины доли — отдельно, не здесь). Размер не задан
+ * или битый — дефолт 4/4 (DEFAULT_TIME_SIGNATURE, данные до PIANO-22).
  * Чистая функция: тесты и плеер не зависят от аудио.
  */
 export function metronomeTicks(
   tempoMap: readonly TempoChange[],
   untilSec: number,
-  beatsPerBar: number = METRONOME_BEATS_PER_BAR,
+  timeSignature?: TimeSignature,
 ): MetronomeTickPlan[] {
   if (!(untilSec > 0)) return [];
-  const bar = beatsPerBar > 0 ? Math.floor(beatsPerBar) : METRONOME_BEATS_PER_BAR;
+  const bar =
+    timeSignature !== undefined && Number.isInteger(timeSignature.numerator) && timeSignature.numerator > 0
+      ? timeSignature.numerator
+      : DEFAULT_TIME_SIGNATURE.numerator;
   const changes: readonly TempoChange[] =
     tempoMap.length > 0 ? tempoMap : [{ timeSec: 0, bpm: FALLBACK_BPM }];
   const ticks: MetronomeTickPlan[] = [];

@@ -2,7 +2,7 @@
  * Общие помощники слоя импорта (SPEC §5): ошибка разбора и сборка Melody
  * из нот и темповой карты. Форматы файлов сюда не проникают.
  */
-import type { Melody, Note, TempoChange } from "../core/types";
+import { DEFAULT_TIME_SIGNATURE, type Melody, type Note, type TempoChange, type TimeSignature } from "../core/types";
 
 /** Ошибка разбора файла: понятное сообщение для UI на русском. */
 export class ImportError extends Error {
@@ -24,8 +24,21 @@ export interface MelodyParts {
   composer: string;
   notes: Note[];
   tempoMap: TempoChange[];
+  /** Размер такта из файла; нет или битое — сборка поставит 4/4. */
+  timeSignature?: TimeSignature;
   /** Порог сплита по питчу, если партии определены сплитом (см. Melody). */
   splitPoint?: number;
+}
+
+/** Размер в разумных границах (целые > 0) или undefined — мусор из файла не пропускаем. */
+export function normalizeTimeSignature(ts: TimeSignature | undefined): TimeSignature {
+  const ok =
+    ts !== undefined &&
+    Number.isInteger(ts.numerator) &&
+    ts.numerator > 0 &&
+    Number.isInteger(ts.denominator) &&
+    ts.denominator > 0;
+  return ok ? (ts as TimeSignature) : DEFAULT_TIME_SIGNATURE;
 }
 
 /** Приводит темповую карту к канону: сортировка, дедупликация, старт с 0 c. */
@@ -60,6 +73,7 @@ export function assembleMelody(parts: MelodyParts): Melody {
     composer: parts.composer,
     notes,
     tempoMap: normalizeTempoMap(parts.tempoMap),
+    timeSignature: normalizeTimeSignature(parts.timeSignature),
     durationSec,
   };
   if (parts.splitPoint !== undefined) melody.splitPoint = parts.splitPoint;

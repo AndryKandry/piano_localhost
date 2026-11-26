@@ -2,9 +2,14 @@
  * Smoke-проверка «Музыкального диктанта» (PIANO-17) без браузера: генератор
  * (детерминизм по rng-сиду, диапазоны уровней 1–2 белые / 3–4 с диезами,
  * длина по уровню, шаг ≤ квинты, первые ноты C4/E4/G4), план проигрывания
- * (offsets/длительности/totalSec) и сессия ввода/проверки (фазы, % позиций,
- * разбор, границы: лишний ввод игнорится, проверка вне фазы — null).
- * Экран (DOM/канвас/звук) в node не тестируется — нужен живой браузер.
+ * (offsets/длительности/totalSec), сессия ввода/проверки (фазы, % позиций,
+ * разбор, границы: лишний ввод игнорится, проверка вне фазы — null) и экран
+ * (PIANO-23): cancelScheduled playback — close/новый диктант/уровень/реплiter
+ * глушат запланированный хвост, репли звучит немедленно; playback без отмены
+ * живёт по-старому. Экран — на DOM-стабе (панель ADR-004) с моком playback;
+ * канвас-рендер клавиатуры — no-op 2D-контекст. Отмена в самих источниках
+ * (smplr/synth) в node невозможна — нужен живой AudioContext (проверка
+ * вручную в браузере); здесь — экранная логика и типы (build).
  * Запуск: npm run smoke:dictation.
  */
 import {
@@ -21,6 +26,7 @@ import {
   type DictationLevel,
   type DictationSequence,
 } from "../src/primer/dictation";
+import { initDictationScreen, type DictationScreenApi, type PrimerPlayback } from "../src/primer/dictation-screen";
 import { PrimerProgressStore } from "../src/primer/progress";
 
 let checks = 0;
@@ -30,6 +36,17 @@ function assert(condition: boolean, message: string): void {
 }
 function assertEqual<T>(actual: T, expected: T, message: string): void {
   assert(actual === expected, `${message} (ожидалось ${String(expected)}, получено ${String(actual)})`);
+}
+function assertArrayEqual<T>(actual: T[], expected: T[], message: string): void {
+  const a = JSON.stringify(actual);
+  const b = JSON.stringify(expected);
+  assert(a === b, `${message} (ожидалось ${b}, получено ${a})`);
+}
+/** Разворачивает possibly-undefined стаба: нет элемента — провал, не тихий null. */
+function requireStub<T>(value: T | undefined, message: string): T {
+  checks += 1;
+  if (value === undefined) throw new Error(`ПРОВАЛ: ${message}`);
+  return value;
 }
 
 // --- Детерминированный rng (одинаковый seed → одинаковый диктант) ---
@@ -265,8 +282,231 @@ function testProgress(): void {
   progress.recordResult({ lessonId: dictationProgressKey(2), percent: 67, correct: 2, total: 3, bestStreak: 2, passed: false });
   assertEqual(progress.bestPercent(dictationProgressKey(1)), 100, "лучшая попытка записана");
   assertEqual(progress.bestPercent(dictationProgressKey(2)), 67, "уровень 2 независим");
-  assert(memory.get("piano.primer.progress")?.includes('"dictation-level-1":100'), "ключ dictation-level-N в хранилище");
+  assert(memory.get("piano.primer.progress")?.includes('"dictation-level-1":100') === true, "ключ dictation-level-N в хранилище");
   console.log("  OK: запись, best = max, уровни независимы, ключ в хранилище");
+}
+
+// --- 6. Экран: cancelScheduled playback (PIANO-23) — DOM-стаб + мок playback ---
+
+/** Канвас-2D no-op: рендер клавиатуры в node не рисует, только вызывает методы. */
+function fakeCtx2D(): CanvasRenderingContext2D {
+  return {
+    fillStyle: "",
+    strokeStyle: "",
+    lineWidth: 0,
+    font: "",
+    textAlign: "",
+    textBaseline: "",
+    globalAlpha: 1,
+    fillRect: () => {},
+    strokeRect: () => {},
+    setTransform: () => {},
+    fillText: () => {},
+    measureText: (text: string) => ({ width: text.length * 6 }),
+  } as unknown as CanvasRenderingContext2D;
+}
+
+/** DOM-элемент-стаб с собранными click-обработчиками и детьми (appendChild). */
+interface FakeEl {
+  hidden: boolean;
+  disabled: boolean;
+  textContent: string;
+  className: string;
+  classList: { toggle(name: string, force?: boolean): void };
+  addEventListener(type: string, handler: () => void): void;
+  appendChild(child: FakeEl): void;
+  replaceChildren(...children: unknown[]): void;
+  children: FakeEl[];
+  clicks: Array<() => void>;
+}
+
+function makeEl(isCanvas: boolean): FakeEl {
+  const element: FakeEl = {
+    hidden: false,
+    disabled: false,
+    textContent: "",
+    className: "",
+    classList: { toggle: () => {} },
+    addEventListener: (type: string, handler: () => void) => {
+      if (type === "click") element.clicks.push(handler);
+    },
+    appendChild: (child: FakeEl) => {
+      element.children.push(child);
+    },
+    replaceChildren: () => {},
+    children: [],
+    clicks: [],
+  };
+  if (isCanvas) {
+    const canvas = element as FakeEl & {
+      width: number;
+      height: number;
+      getContext(kind: string): CanvasRenderingContext2D | null;
+      getBoundingClientRect(): { width: number; height: number };
+    };
+    canvas.width = 0;
+    canvas.height = 0;
+    canvas.getContext = (kind: string) => (kind === "2d" ? fakeCtx2D() : null);
+    canvas.getBoundingClientRect = () => ({ width: 320, height: 88 });
+  }
+  return element;
+}
+
+interface PlaybackMock {
+  playback: PrimerPlayback;
+  /** Все запланированные ноты: { pitch, timeSec, durationSec }. */
+  notes: Array<{ pitch: number; timeSec: number; durationSec: number }>;
+  /** Аргументы cancelScheduled (пусто у legacy-мока без отмены). */
+  cancels: number[];
+  hasCancel: boolean;
+  setTime(t: number): void;
+}
+
+function makePlayback(withCancel: boolean): PlaybackMock {
+  let now = 100;
+  const notes: Array<{ pitch: number; timeSec: number; durationSec: number }> = [];
+  const cancels: number[] = [];
+  const playback: PrimerPlayback = {
+    playNote: (pitch: number, _velocity: number, timeSec: number, durationSec: number) => {
+      notes.push({ pitch, timeSec, durationSec });
+    },
+    currentTime: () => now,
+  };
+  if (withCancel) playback.cancelScheduled = (fromSec: number) => void cancels.push(fromSec);
+  return { playback, notes, cancels, hasCancel: withCancel, setTime: (t: number) => void (now = t) };
+}
+
+interface ScreenHarness {
+  api: DictationScreenApi;
+  els: Map<string, FakeEl>;
+  mock: PlaybackMock;
+}
+
+/**
+ * Собрать экран диктанта на стабе DOM: document/window подменяются глобально —
+ * модули экрана читают их только внутри вызовов (top-level чист), поэтому
+ * статический импорт безопасен.
+ */
+function makeScreen(mock: PlaybackMock): ScreenHarness {
+  const els = new Map<string, FakeEl>();
+  const canvasIds = new Set(["primerDictKbCanvas"]);
+  const ids = [
+    "primerDictation",
+    "primerDictLevels",
+    "primerDictStatus",
+    "primerDictFeedback",
+    "primerDictResult",
+    "primerDictNew",
+    "primerDictListen",
+    "primerDictCheck",
+    "primerDictBack",
+    "primerDictKbCanvas",
+  ];
+  for (const id of ids) els.set(id, makeEl(canvasIds.has(id)));
+
+  (globalThis as Record<string, unknown>).document = {
+    getElementById: (id: string) => els.get(id) ?? null,
+    createElement: () => makeEl(false),
+  };
+  (globalThis as Record<string, unknown>).window = { devicePixelRatio: 1 };
+
+  const memory = new Map<string, string>();
+  const progress = new PrimerProgressStore({
+    getItem: (key: string) => memory.get(key) ?? null,
+    setItem: (key: string, value: string) => void memory.set(key, value),
+  });
+  const pressed = new Set<number>();
+  const api = initDictationScreen({
+    mapping: {
+      pitches: () => [60, 61, 62, 63, 64, 65, 66, 67],
+      labels: () => new Map([[60, "Tab"]]),
+    },
+    pressedPitches: () => pressed,
+    progress,
+    playback: mock.playback,
+    onBack: () => {},
+  });
+  return { api, els, mock };
+}
+
+function testScreenCancel(): void {
+  console.log("Экран диктанта: cancelScheduled playback (PIANO-23):");
+
+  // A. Playback с отменой: open/реплай/новый/уровень/close глушат хвост.
+  const mock = makePlayback(true);
+  const { api, els } = makeScreen(mock);
+  const listenBtn = requireStub(els.get("primerDictListen"), "стаб: кнопка «Прослушать» найдена");
+  const newBtn = requireStub(els.get("primerDictNew"), "стаб: кнопка «Новый диктант» найдена");
+  const checkBtn = requireStub(els.get("primerDictCheck"), "стаб: кнопка «Проверить» найдена");
+  const statusEl = requireStub(els.get("primerDictStatus"), "стаб: статус найден");
+  const levelsEl = requireStub(els.get("primerDictLevels"), "стаб: контейнер уровней найден");
+
+  api.open();
+  assert(api.isActive(), "open → экран активен");
+  assertArrayEqual(mock.cancels, [100], "open: хвост прошлого отменяется от текущего времени");
+  assertEqual(mock.notes.length, DICTATION_NOTE_COUNTS[1], "open: план уровня 1 запланирован");
+  assertEqual(mock.notes[0]?.timeSec, 100 + 2 * DICTATION_LEAD_IN_SEC, "первая нота — вступление от now");
+  const feedback = els.get("primerDictFeedback");
+  assert((feedback?.textContent ?? "").includes("Слушай"), "фаза «слушай» — фидбек выставлен");
+
+  // Реплай mid-listen: старый план ещё не доиграл (listenUntil ≈ 102.5),
+  // отмена позволяет перебить сразу — новая первая нота на 101 + 2×вступление.
+  mock.setTime(101);
+  listenBtn.clicks[0]?.();
+  assertArrayEqual(mock.cancels, [100, 101], "реплай: cancel от текущего времени");
+  assertEqual(mock.notes.length, 2 * DICTATION_NOTE_COUNTS[1], "реплай: второй план запланирован");
+  assertEqual(
+    mock.notes[2]?.timeSec,
+    101 + 2 * DICTATION_LEAD_IN_SEC,
+    "реплай звучит немедленно, не ждёт конца старого плана",
+  );
+
+  // «Новый диктант» — тоже cancel (хвост старого диктанта).
+  newBtn.clicks[0]?.();
+  assertArrayEqual(mock.cancels, [100, 101, 101], "новый диктант: cancel");
+
+  // Смена уровня — тоже cancel.
+  const level2 = requireStub(levelsEl.children[1], "стаб: кнопка уровня 2 создана");
+  level2.clicks[0]?.();
+  assertArrayEqual(mock.cancels, [100, 101, 101, 101], "смена уровня: cancel");
+  // Планов к моменту: open + реплай + новый (уровень 1, по 2 ноты) + уровень 2 (3 ноты).
+  assertEqual(
+    mock.notes.length,
+    3 * DICTATION_NOTE_COUNTS[1] + DICTATION_NOTE_COUNTS[2],
+    "смена уровня: план уровня 2",
+  );
+
+  // Фаза «слушай» кончается по аудио-часам (ежекадровый мост updateKeyboard).
+  mock.setTime(200);
+  api.updateKeyboard();
+  assertEqual(checkBtn.disabled, false, "после конца плана — фаза ввода (Проверить доступна)");
+  api.handlePitch(60); // ввод в фазе input принимается
+  assert(statusEl.textContent.includes("введено 1/"), "введённая позиция отражена в статусе");
+
+  // close глушит хвост; повторный close — тихий.
+  api.close();
+  assertArrayEqual(mock.cancels, [100, 101, 101, 101, 200], "close: хвост отменяется от текущего времени");
+  assertEqual(api.isActive(), false, "close: экран неактивен");
+  api.close();
+  assertEqual(mock.cancels.length, 5, "повторный close — cancel не дублируется");
+
+  // B. Legacy playback без отмены: старое поведение (реплай ждёт конца плана).
+  const legacy = makePlayback(false);
+  const legacyScreen = makeScreen(legacy);
+  assertEqual(legacy.hasCancel, false, "legacy-мок: cancelScheduled отсутствует");
+  legacyScreen.api.open();
+  assertEqual(legacy.notes.length, DICTATION_NOTE_COUNTS[1], "legacy: первый план запланирован");
+  legacy.setTime(101); // listenUntil старого плана ≈ 102.5
+  legacyScreen.els.get("primerDictListen")?.clicks[0]?.();
+  assertEqual(legacy.notes.length, 2 * DICTATION_NOTE_COUNTS[1], "legacy: реплай запланирован");
+  assertEqual(
+    legacy.notes[2]?.timeSec,
+    100 + DICTATION_LEAD_IN_SEC + 2 * DICTATION_STEP_SEC + DICTATION_NOTE_SEC + DICTATION_LEAD_IN_SEC,
+    "legacy: реплай не раньше конца текущего плана + вступление",
+  );
+  legacyScreen.api.close();
+  assertEqual(legacyScreen.api.isActive(), false, "legacy close без отмены — без ошибок");
+  console.log("  OK: open/реплай/новый/уровень/close глушат хвост, немедленный реплай, legacy ждёт конца плана");
 }
 
 function main(): void {
@@ -275,6 +515,7 @@ function main(): void {
   testSession();
   testBoundaries();
   testProgress();
+  testScreenCancel();
   console.log(`SMOKE OK: ${checks} проверок пройдено`);
 }
 

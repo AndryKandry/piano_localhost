@@ -2,10 +2,11 @@
  * Smoke-проверка слоя импорта и библиотеки без тестового фреймворка
  * (в духе smoke очереди 1). Запуск: npm run smoke:import.
  *
- * MIDI-файл собирается руками в байты (SMF: MThd + MTrk, meta-темп),
- * MusicXML — мини-строка; DOMParser в node подменяется linkedom.
- * Проверяются: питчи/времена/партии рук каскадом (имя → канал → сплит),
- * MusicXML (divisions/темп/пауза/аккорд/staff), встроенная библиотека,
+ * MIDI-файл собирается руками в байты (SMF: MThd + MTrk, meta-темп 0x51,
+ * meta-размер 0x58), MusicXML — мини-строка; DOMParser в node подменяется
+ * linkedom. Проверяются: питчи/времена/партии рук каскадом (имя → канал →
+ * сплит), размер такта 0x58/<time> и дефолт 4/4 (PIANO-22), MusicXML
+ * (divisions/темп/пауза/аккорд/staff), встроенная библиотека,
  * LibraryStore (list/get/setBest/addUserFile/remove, сниффинг).
  */
 import { DOMParser } from "linkedom";
@@ -172,6 +173,25 @@ function emptyMidi(): ArrayBuffer {
   return midiFile(0, [track]);
 }
 
+// --- MIDI: meta 0x58 (размер такта) → timeSignature мелодии (PIANO-22) ---
+
+/** 3/4 в SMF-байтах: nn=3 доли, dd=2 → знаменатель 2^2=4; cc=24, bb=8 — служебные. */
+const TIMESIG_3_4: number[] = [3, 2, 0x18, 0x08];
+
+function timeSignatureMidi(withTimeSignature: boolean): ArrayBuffer {
+  const conductor = trackChunk([
+    { delta: 0, bytes: TEMPO_120 },
+    ...(withTimeSignature ? [{ delta: 0, bytes: metaEvent(0x58, TIMESIG_3_4) }] : []),
+    { delta: 0, bytes: END_OF_TRACK },
+  ]);
+  const melody = trackChunk([
+    { delta: 0, bytes: noteOn(60, 100, 0) },
+    { delta: 480, bytes: noteOff(60, 0) },
+    { delta: 0, bytes: END_OF_TRACK },
+  ]);
+  return midiFile(1, [conductor, melody]);
+}
+
 const SCORE_PARTWISE = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
   <work><work-title>Проверка XML</work-title></work>
@@ -179,7 +199,7 @@ const SCORE_PARTWISE = `<?xml version="1.0" encoding="UTF-8"?>
   <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
   <part id="P1">
     <measure number="1">
-      <attributes><divisions>2</divisions></attributes>
+      <attributes><divisions>2</divisions><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
       <direction><sound tempo="90"/></direction>
       <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><staff>1</staff></note>
       <note><rest/><duration>2</duration><voice>1</voice><staff>1</staff></note>
@@ -226,6 +246,16 @@ function testMidi(): void {
   assertEqual(named.tempoMap[0].bpm, 120, "темп 120 из meta-события");
   assertApprox(e4.velocity, 90, "velocity 90 перенесена (0.709*127≈90)");
   assert(named.splitPoint === undefined, "splitPoint нет, когда руки определены именем");
+  assertEqual(named.timeSignature.numerator, 4, "нет 0x58 → дефолт 4/4 (числитель)");
+  assertEqual(named.timeSignature.denominator, 4, "нет 0x58 → дефолт 4/4 (знаменатель)");
+
+  // Размер из meta 0x58: 3/4 в conductor-треке; без него — дефолт 4/4.
+  const triple = parseMidi(timeSignatureMidi(true), { fallbackTitle: "Тест" });
+  assertEqual(triple.timeSignature.numerator, 3, "0x58 nn=3 → числитель 3");
+  assertEqual(triple.timeSignature.denominator, 4, "0x58 dd=2 → знаменатель 2^2=4");
+  const plain = parseMidi(timeSignatureMidi(false));
+  assertEqual(plain.timeSignature.numerator, 4, "MIDI без 0x58 → дефолт 4/4");
+  assertEqual(plain.timeSignature.denominator, 4, "MIDI без 0x58 → дефолт 4/4");
 
   const channels = parseMidi(channelTracksMidi());
   assertEqual(channels.notes.length, 3, "каналы: число нот");
@@ -276,9 +306,17 @@ function testMusicXml(): void {
   assertEqual(g3.handPart, "left", "partwise G3: staff 2 → left");
   assertEqual(partwise.tempoMap[0].bpm, 90, "partwise: темп из <sound tempo>");
   assertEqual(partwise.tempoMap[0].timeSec, 0, "partwise: темп с 0 c");
+  assertEqual(partwise.timeSignature.numerator, 3, "partwise: <beats>3</beats> → числитель 3");
+  assertEqual(partwise.timeSignature.denominator, 4, "partwise: <beat-type>4</beat-type> → знаменатель 4");
 
   const noTempo = parseMusicXml(SCORE_PARTWISE.replace('<direction><sound tempo="90"/></direction>', ""));
   assertEqual(noTempo.tempoMap[0].bpm, 120, "без темпа в файле — дефолт 120 BPM");
+
+  const brokenTime = parseMusicXml(
+    SCORE_PARTWISE.replace("<time><beats>3</beats><beat-type>4</beat-type></time>", "<time><beats>два</beats><beat-type>0</beat-type></time>"),
+  );
+  assertEqual(brokenTime.timeSignature.numerator, 4, "битый <time> → дефолт 4/4");
+  assertEqual(brokenTime.timeSignature.denominator, 4, "битый <time> → дефолт 4/4");
 
   const timewise = parseMusicXml(SCORE_TIMEWISE);
   assertEqual(timewise.notes.length, 1, "timewise: число нот");
@@ -286,6 +324,7 @@ function testMusicXml(): void {
   assertApprox(c5.startTimeSec, 0, "timewise: старт 0");
   assertApprox(c5.durationSec, 2, "timewise: 4 divisions = 2 c при 120 BPM");
   assertEqual(c5.handPart, "left", "timewise: staff 2 → left");
+  assertEqual(timewise.timeSignature.numerator, 4, "timewise: без <time> — дефолт 4/4");
 
   assertRejects(
     () => parseMusicXml("<html><body>не ноты</body></html>"),
@@ -320,6 +359,8 @@ function testBuiltins(): void {
     assert(sorted, `«${spec.title}»: ноты отсортированы по времени`);
     assert(melody.durationSec > 0, `«${spec.title}»: длительность положительная`);
     assertEqual(melody.tempoMap[0].bpm, spec.bpm, `«${spec.title}»: BPM из описания`);
+    assertEqual(melody.timeSignature.numerator, 4, `«${spec.title}»: размер дефолт 4/4`);
+    assertEqual(melody.timeSignature.denominator, 4, `«${spec.title}»: размер дефолт 4/4`);
     assert(melody.splitPoint === undefined, `«${spec.title}»: splitPoint не нужен (руки явные)`);
   }
   assertEqual(ids.size, BUILTIN_SPECS.length, "id встроенных мелодий уникальны");

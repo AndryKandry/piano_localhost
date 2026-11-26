@@ -17,8 +17,10 @@
  * Звук — планируемый (инвариант GLOSSARY #2): план planDictationPlayback
  * (0.5 с вступление, нота 0.5 с + пауза 0.5 с) экран планирует через
  * deps.playback.playNote на аудио-часах; педаль и живой ввод не влияют.
- * Повтор («Прослушать ещё раз») — сколько угодно до проверки; репланы не
- * накладываются: новый план стартует не раньше, чем прозвучит текущий.
+ * Повтор («Прослушать ещё раз») — сколько угодно до проверки; при playback с
+ * отменой (PIANO-23) прежний план глушится и новый звучит немедленно, без
+ * отмены — как раньше: новый план стартует не раньше, чем прозвучит текущий.
+ * Уход с диктанта (close) и новый диктант/уровень глушат зависший хвост.
  * Фаза «слушай» кончается по аудио-часам (updateKeyboard вызывается кадром —
  * в нём и сверка); первое нажатие открывает ввод раньше плана — игрок готов.
  *
@@ -54,6 +56,14 @@ export interface PrimerPlayback {
   playNote(pitch: number, velocity: number, timeSec: number, durationSec: number): void;
   /** Аудио-часы (GLOSSARY #2) — единственный источник времени диктанта. */
   currentTime(): number;
+  /**
+   * Отмена запланированных нот со стартом ≥ fromSec (PIANO-23): хвост
+   * предыдущего плана (уход с диктанта, новый диктант, «Прослушать ещё раз»)
+   * глушится, репланы не ждут конца текущего плана. Опционален для обратной
+   * совместимости: без него экран живёт по-старому — реплан не раньше конца
+   * текущего плана, уход оставляет хвост доигрывать.
+   */
+  cancelScheduled?(fromSec: number): void;
 }
 
 export interface DictationScreenDeps {
@@ -107,9 +117,10 @@ export function initDictationScreen(deps: DictationScreenDeps): DictationScreenA
   let lastCheck: DictationCheck | null = null;
   /**
    * Аудио-время, когда прозвучит текущий план (null — ничего не запланировано):
-   * конец фазы «слушай» и точка отсчёта репланов (новый план не раньше).
-   * Очистка — при проверке и новом диктанте; ранний ввод план не отменяет:
-   * он ещё звучит и репланы обязаны ждать его конца.
+   * конец фазы «слушай»; без отмены (PIANO-23) ещё и точка отсчёта репланов
+   * (новый план не раньше). Очистка — при проверке, закрытии и новом диктанте;
+   * ранний ввод план не отменяет: он ещё звучит и репланы (в старом режиме)
+   * обязаны ждать его конца.
    */
   let listenUntil: number | null = null;
 
@@ -149,6 +160,10 @@ export function initDictationScreen(deps: DictationScreenDeps): DictationScreenA
     rootEl.hidden = true;
     kbVisible = false;
     kbCanvas.hidden = true;
+    // Уход в середине прослушивания — запланированный хвост глушится
+    // (PIANO-23, SPEC §4.11). Опционально: старый playback молча доиграет его.
+    playback.cancelScheduled?.(playback.currentTime());
+    listenUntil = null;
   }
 
   function switchLevel(next: DictationLevel): void {
@@ -183,13 +198,22 @@ export function initDictationScreen(deps: DictationScreenDeps): DictationScreenA
 
   /**
    * Запланировать проигрывание на аудио-часах (инвариант #2): нота i —
-   * base + offsetSec плана. Реплан во время звучания не накладывается:
-   * base не раньше конца текущего плана. Повтор — сколько угодно до проверки.
+   * base + offsetSec плана. Повтор — сколько угодно до проверки. С отменой
+   * (PIANO-23) хвост прошлого плана глушится и новый звучит немедленно;
+   * без неё — по-старому: base не раньше конца текущего плана, чтобы реплан
+   * не накладывался.
    */
   function playSequence(): void {
     if (!active || sequence === null || judge.currentPhase === "result") return;
     const plan = planDictationPlayback(sequence.notes);
-    const base = Math.max(playback.currentTime(), listenUntil ?? 0) + DICTATION_LEAD_IN_SEC;
+    const now = playback.currentTime();
+    let base: number;
+    if (playback.cancelScheduled) {
+      playback.cancelScheduled(now);
+      base = now + DICTATION_LEAD_IN_SEC;
+    } else {
+      base = Math.max(now, listenUntil ?? 0) + DICTATION_LEAD_IN_SEC;
+    }
     for (const entry of plan.entries) {
       playback.playNote(entry.pitch, DEFAULT_VELOCITY, base + entry.offsetSec, entry.durationSec);
     }

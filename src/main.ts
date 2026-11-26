@@ -292,9 +292,11 @@ const primer = initPrimerScreen({
   pressedPitches: () => input.pressedPitches(),
   settings,
   // Диктант (PIANO-17): ноты планируются на аудио-часах, как автоплей.
+  // cancelScheduled (PIANO-23): уход/реплей глушит запланированный хвост.
   dictationPlayback: {
     playNote: (pitch, velocity, timeSec, durationSec) => engine.playNote(pitch, velocity, timeSec, durationSec),
     currentTime: () => clock.currentTime(),
+    cancelScheduled: (fromSec) => engine.cancelScheduled(fromSec),
   },
   onBack: () => setPrimerOpen(false),
 });

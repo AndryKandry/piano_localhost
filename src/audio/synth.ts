@@ -80,9 +80,12 @@ class SynthVoice {
   private readonly oscs: OscillatorNode[] = [];
   private readonly gain: GainNode;
   private readonly sustainGain: number;
+  /** Аудио-время старта голоса (планируется в будущем — playNote). */
+  readonly startAt: number;
   private released = false;
 
   constructor(ctx: AudioContext, destination: AudioNode, spec: SynthPresetSpec, pitch: number, velocity: number, timeSec: number) {
+    this.startAt = timeSec;
     const freq = midiToFreq(pitch + spec.transpose);
     // Перцептуальная кривая velocity; тихие ноты не исчезают совсем.
     const v = 0.2 + 0.8 * Math.pow(Math.min(1, Math.max(0, velocity / 127)), 1.4);
@@ -137,6 +140,29 @@ class SynthVoice {
       }
     }
   }
+
+  /**
+   * Отмена запланированного голоса (PIANO-23): now ≤ startAt — ADSR ещё не
+   * началась. Снимаем запланированные события гейна (включая уже назначенный
+   * release от playNote) и останавливаем осцилляторы: по спецификации Web
+   * Audio stop(now) при now ≤ start отменяет звучание — источник не начнёт
+   * играть (повторный stop с более ранним временем перекрывает прежний; тот
+   * же приём в smplr Voice.stop). released поднимаем — голос больше ничем
+   * не управляется.
+   */
+  cancel(now: number): void {
+    this.released = true;
+    const g = this.gain.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(SILENCE, now);
+    for (const osc of this.oscs) {
+      try {
+        osc.stop(now);
+      } catch {
+        // Осциллятор уже остановлен — не проблема.
+      }
+    }
+  }
 }
 
 /** Синтезаторный пресет: реестр голосов по питчу (стек — репичи). */
@@ -176,6 +202,24 @@ export class SynthSource implements InstrumentSource {
       for (const voice of stack) voice.release(timeSec, this.spec.releaseSec);
     }
     this.voices.clear();
+  }
+
+  /**
+   * Отмена запланированных голосов (PIANO-23): осцилляторы голосов стартуют
+   * в будущем (osc.start(timeSec) от playNote) — не начавшие звучать отменяются
+   * через voice.cancel; уже звучащие (старт < fromSec) доигрывают свой release.
+   */
+  cancelScheduled(fromSec: number): void {
+    const now = this.ctx.currentTime;
+    for (const [pitch, stack] of this.voices) {
+      const kept = stack.filter((voice) => {
+        if (voice.startAt < fromSec) return true; // уже звучит — не трогаем
+        voice.cancel(now);
+        return false;
+      });
+      if (kept.length === 0) this.voices.delete(pitch);
+      else this.voices.set(pitch, kept);
+    }
   }
 
   dispose(): void {
