@@ -30,6 +30,12 @@ export interface SfontSpec {
   gain?: number;
 }
 
+/** Запущенный голос: StopFn smplr + аудио-время старта (для отмены запланированных). */
+interface ScheduledStop {
+  stop: (time?: number) => void;
+  startAt: number;
+}
+
 /**
  * Звуковые пресеты на soundfont-банке; ключи — подмножество PresetId.
  * loadLoopData только там, где loop.json реально есть в банке (проверено
@@ -50,8 +56,8 @@ export class SoundFontSource implements InstrumentSource {
   private presetGain: GainNode | null = null;
   /** Гейт-фейд голосов этого пресета (ampRelease), сек. */
   private readonly releaseSec: number;
-  /** StopFn на каждый запущенный голос, стек по питчу (репичи). */
-  private readonly stops = new Map<number, Array<(time?: number) => void>>();
+  /** Запущенные голоса, стек по питчу (репичи). */
+  private readonly stops = new Map<number, ScheduledStop[]>();
 
   constructor(
     presetId: PresetId,
@@ -94,24 +100,41 @@ export class SoundFontSource implements InstrumentSource {
     if (!this.sf) return;
     const stop = this.sf.start({ note: pitch, velocity, time: timeSec, ampRelease: this.releaseSec });
     const stack = this.stops.get(pitch) ?? [];
-    stack.push(stop);
+    stack.push({ stop, startAt: timeSec });
     this.stops.set(pitch, stack);
   }
 
   noteOff(pitch: number, timeSec: number, _fadeSec: number): void {
     // smplr применяет собственный фейд (ampRelease) — сэмпл не обрывается.
     const stack = this.stops.get(pitch);
-    const stop = stack?.pop();
-    if (!stop || !stack) return;
-    stop(timeSec);
+    const voice = stack?.pop();
+    if (!voice || !stack) return;
+    voice.stop(timeSec);
     if (stack.length === 0) this.stops.delete(pitch);
   }
 
   allOff(timeSec: number, _fadeSec: number): void {
     for (const stack of this.stops.values()) {
-      for (const stop of stack) stop(timeSec);
+      for (const voice of stack) voice.stop(timeSec);
     }
     this.stops.clear();
+  }
+
+  /**
+   * Отмена запланированных голосов (PIANO-23) — см. audio/sampler.ts: тот же
+   * smplr-движок (Soundfont построен на SmplrImpl), StopFn до старта отменяет
+   * голос; StopFn() без аргумента = мгновенно.
+   */
+  cancelScheduled(fromSec: number): void {
+    for (const [pitch, stack] of this.stops) {
+      const kept = stack.filter((voice) => {
+        if (voice.startAt < fromSec) return true; // уже звучит — не трогаем
+        voice.stop();
+        return false;
+      });
+      if (kept.length === 0) this.stops.delete(pitch);
+      else this.stops.set(pitch, kept);
+    }
   }
 
   dispose(): void {

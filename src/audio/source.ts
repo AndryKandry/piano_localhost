@@ -21,6 +21,14 @@ export interface InstrumentSource {
   /** Заглушить все голоса источника. */
   allOff(timeSec: number, fadeSec: number): void;
 
+  /**
+   * Отмена запланированных нот (PIANO-23): голоса со временем старта
+   * ≥ fromSec (аудио-время) не должны прозвучать вовсе — хвост автоплея
+   * или диктанта после ухода со сцены. Уже звучащие голоса (старт < fromSec)
+   * не затрагиваются: их завершают обычные noteOff/allOff.
+   */
+  cancelScheduled(fromSec: number): void;
+
   /** Освободить ресурсы источника. */
   dispose(): void;
 }

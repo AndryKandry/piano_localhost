@@ -145,6 +145,19 @@ export class AudioEngine {
     this.pedalDown = false;
   }
 
+  /**
+   * Отмена запланированных нот (PIANO-23): голоса со стартом ≥ fromSec не
+   * прозвучат — хвост автоплея или диктанта после ухода со сцены. Затрагивает
+   * все СОЗДАННЫЕ источники, а не только текущий: запланированный хвост мог
+   * остаться на старом пресете (смена тембра глушит лишь звучащие голоса —
+   * allNotesOff). Несозданные пресеты не инстанцируются (ленивая загрузка
+   * сэмплов ради пустой отмены не нужна). Живой ввод (старт < fromSec) не
+   * затрагивается.
+   */
+  cancelScheduled(fromSec: number): void {
+    for (const src of this.sources.values()) src.cancelScheduled(fromSec);
+  }
+
   /** Ленивое создание источника пресета (сэмплы фортепиано — при первом использовании). */
   private ensureSource(id: PresetId): InstrumentSource {
     let src = this.sources.get(id);
