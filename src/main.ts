@@ -77,7 +77,7 @@ function updateLoadHud(state: LoadState, progress: number | null): void {
   switch (state) {
     case "loading":
       hudLoad.classList.add("loading");
-      hudLoad.textContent = progress === null ? "Загрузка сэмплов фортепиано…" : `Загрузка сэмплов фортепиано… ${Math.round(progress * 100)}%`;
+      hudLoad.textContent = progress === null ? "Загрузка сэмплов…" : `Загрузка сэмплов… ${Math.round(progress * 100)}%`;
       break;
     case "ready":
       hudLoad.classList.add("ready");

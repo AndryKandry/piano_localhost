@@ -7,8 +7,21 @@
 /** Партия руки (GLOSSARY: партия руки). */
 export type HandPart = "right" | "left";
 
-/** Пресет (тембр) — инструмент звучания (GLOSSARY). */
-export type PresetId = "piano" | "organ" | "synthLead" | "bass";
+/**
+ * Пресет (тембр) — инструмент звучания (GLOSSARY).
+ * piano — сэмплы Splendid (audio/sampler.ts); epiano/guitar/strings/flute —
+ * сэмплы soundfont-банка (audio/sfont.ts); organ/synthLead/bass — синтезаторные
+ * голоса (audio/synth.ts). Список и имена — core/presets.ts (единый источник).
+ */
+export type PresetId =
+  | "piano"
+  | "epiano"
+  | "guitar"
+  | "strings"
+  | "flute"
+  | "organ"
+  | "synthLead"
+  | "bass";
 
 /** Нота — каноничное представление (ADR-003 п.3). */
 export interface Note {

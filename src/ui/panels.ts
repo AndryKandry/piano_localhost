@@ -97,7 +97,7 @@ export function initSidePanel(deps: PanelsDeps): PanelsApi {
     presetButtons.set(id, button);
     presetGroup.appendChild(button);
   }
-  const sampleStatus = el("span", "sample-status", "Сэмплы фортепиано: —");
+  const sampleStatus = el("span", "sample-status", "Сэмплы: —");
   timbreSection.append(presetGroup, sampleStatus);
 
   // --- Секция «Настройки» ---
@@ -214,18 +214,18 @@ export function initSidePanel(deps: PanelsDeps): PanelsApi {
         case "loading":
           sampleStatus.classList.add("loading");
           sampleStatus.textContent =
-            progress === null ? "Сэмплы фортепиано: загрузка…" : `Сэмплы фортепиано: загрузка ${Math.round(progress * 100)}%`;
+            progress === null ? "Сэмплы: загрузка…" : `Сэмплы: загрузка ${Math.round(progress * 100)}%`;
           break;
         case "ready":
           sampleStatus.classList.add("ready");
-          sampleStatus.textContent = "Сэмплы фортепиано: готовы";
+          sampleStatus.textContent = "Сэмплы: готовы";
           break;
         case "error":
           sampleStatus.classList.add("error");
-          sampleStatus.textContent = "Сэмплы фортепиано: не загрузились (CDN недоступен?)";
+          sampleStatus.textContent = "Сэмплы: не загрузились (CDN недоступен?)";
           break;
         case "idle":
-          sampleStatus.textContent = "Сэмплы фортепиано: —";
+          sampleStatus.textContent = "Сэмплы: —";
           break;
       }
     },

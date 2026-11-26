@@ -11,7 +11,9 @@ import type { LoadState, PresetId } from "../core/types";
 import { DEFAULT_VELOCITY } from "../core/types";
 import type { InstrumentSource } from "./source";
 import { SamplerSource } from "./sampler";
+import { SFONT_PRESETS, SoundFontSource } from "./sfont";
 import { SynthSource } from "./synth";
+import type { SynthPresetId } from "./synth";
 
 /** Гейт-рампа обычного отпускания, сек (research 01: 0.3–0.6). */
 const RELEASE_FADE_SEC = 0.35;
@@ -22,7 +24,7 @@ const MIN_NOTE_SEC = 0.05;
 
 export type LoadStateListener = (presetId: PresetId, state: LoadState, progress: number | null) => void;
 
-const SYNTH_PRESET_IDS: ReadonlyArray<Exclude<PresetId, "piano">> = ["organ", "synthLead", "bass"];
+const SYNTH_PRESET_IDS: ReadonlyArray<SynthPresetId> = ["organ", "synthLead", "bass"];
 
 export class AudioEngine {
   private readonly clock: AudioClock;
@@ -153,8 +155,18 @@ export class AudioEngine {
         this.master,
       );
     }
-    if (SYNTH_PRESET_IDS.includes(id as Exclude<PresetId, "piano">)) {
-      return new SynthSource(id as Exclude<PresetId, "piano">, this.clock.context(), this.master);
+    const sfSpec = SFONT_PRESETS[id];
+    if (sfSpec) {
+      return new SoundFontSource(
+        id,
+        sfSpec,
+        this.clock.context(),
+        (state, progress) => this.onLoadState?.(id, state, progress),
+        this.master,
+      );
+    }
+    if (SYNTH_PRESET_IDS.includes(id as SynthPresetId)) {
+      return new SynthSource(id as SynthPresetId, this.clock.context(), this.master);
     }
     throw new Error(`Неизвестный пресет: ${id}`);
   }

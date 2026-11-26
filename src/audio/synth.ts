@@ -6,7 +6,8 @@
 import type { PresetId } from "../core/types";
 import type { InstrumentSource } from "./source";
 
-type SynthPresetId = Exclude<PresetId, "piano">;
+/** Синтезаторные пресеты — явный список (остальные — сэмплы, см. engine.ts). */
+export type SynthPresetId = "organ" | "synthLead" | "bass";
 
 interface SynthPresetSpec {
   /** Партиалы: множитель частоты, относительная амплитуда, форма волны. */

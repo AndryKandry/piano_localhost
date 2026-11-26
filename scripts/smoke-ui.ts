@@ -193,13 +193,21 @@ function testSplit(): void {
 
 function testPresets(): void {
   console.log("Пресеты:");
-  assertEqual(PRESET_ORDER.length, 4, "четыре пресета v1");
+  assertEqual(PRESET_ORDER.length, 8, "восемь пресетов (v2: +электропиано, гитара, струнные, флейта)");
+  assert(new Set(PRESET_ORDER).size === PRESET_ORDER.length, "ids пресетов уникальны");
   for (const id of PRESET_ORDER) {
     assert(PRESET_NAMES[id] !== undefined, `русское имя для ${id}`);
     assert(PRESET_NAMES[id].length > 0, `имя пресета ${id} не пустое`);
+    assertEqual(
+      normalizeSettings({ defaultPreset: id }).defaultPreset,
+      id,
+      `пресет ${id} валиден для настроек`,
+    );
   }
-  assertEqual(normalizeSettings({ defaultPreset: "synthLead" }).defaultPreset, "synthLead", "все пресеты валидны для настроек");
-  console.log("  OK: список и русские имена");
+  assertEqual(normalizeSettings({ defaultPreset: "synthLead" }).defaultPreset, "synthLead", "синт-пресеты валидны");
+  assertEqual(normalizeSettings({ defaultPreset: "guitar" }).defaultPreset, "guitar", "гитара валидна");
+  assertEqual(normalizeSettings({ defaultPreset: "accordion" }).defaultPreset, DEFAULT_SETTINGS.defaultPreset, "неизвестный пресет → дефолт");
+  console.log("  OK: список, русские имена, валидация настроек");
 }
 
 function main(): void {

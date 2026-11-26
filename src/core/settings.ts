@@ -8,6 +8,7 @@
  * по умолчанию — window.localStorage; недоступен (node/приватный режим) —
  * настройки живут в памяти сессии.
  */
+import { PRESET_IDS } from "./presets";
 import type { PresetId } from "./types";
 
 /** Цвета партий рук (GLOSSARY: партия руки) — колонки нот и мягкая подсветка. */
@@ -49,7 +50,6 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
 };
 
 const STORAGE_KEY = "piano.settings";
-const PRESET_IDS: ReadonlyArray<PresetId> = ["piano", "organ", "synthLead", "bass"];
 const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
 export interface SettingsStorage {
