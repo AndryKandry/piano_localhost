@@ -26,6 +26,8 @@ export interface SfontSpec {
   releaseSec: number;
   /** Тянущиеся инструменты: загрузить loop-данные для сустейна. */
   loadLoopData: boolean;
+  /** Баланс громкости против остальных пресетов (PIANO-21, по слуху). */
+  gain?: number;
 }
 
 /**
@@ -35,15 +37,17 @@ export interface SfontSpec {
  * затуханием, лишний 404 не нужен).
  */
 export const SFONT_PRESETS: Partial<Record<PresetId, SfontSpec>> = {
-  epiano: { instrument: "electric_piano_1", releaseSec: 0.3, loadLoopData: false },
-  guitar: { instrument: "acoustic_guitar_steel", releaseSec: 0.35, loadLoopData: false },
-  strings: { instrument: "string_ensemble_1", releaseSec: 0.5, loadLoopData: false },
-  flute: { instrument: "flute", releaseSec: 0.35, loadLoopData: true },
+  epiano: { instrument: "electric_piano_1", releaseSec: 0.3, loadLoopData: false, gain: 1.15 },
+  guitar: { instrument: "acoustic_guitar_steel", releaseSec: 0.35, loadLoopData: false, gain: 1.7 },
+  strings: { instrument: "string_ensemble_1", releaseSec: 0.5, loadLoopData: false, gain: 1.25 },
+  flute: { instrument: "flute", releaseSec: 0.35, loadLoopData: true, gain: 1.25 },
 };
 
 export class SoundFontSource implements InstrumentSource {
   readonly presetId: PresetId;
   private sf: SmplrSoundfont | null = null;
+  /** Пресетный gain-узел (баланс громкости); null при gain 1/undefined. */
+  private presetGain: GainNode | null = null;
   /** Гейт-фейд голосов этого пресета (ampRelease), сек. */
   private readonly releaseSec: number;
   /** StopFn на каждый запущенный голос, стек по питчу (репичи). */
@@ -58,11 +62,21 @@ export class SoundFontSource implements InstrumentSource {
   ) {
     this.presetId = presetId;
     this.releaseSec = spec.releaseSec;
+    // Баланс громкости пресетов (PIANO-21, по слуху игрока): свои GainNode
+    // перед мастер-ом — soundfont-банку завышать volume (>100) не надёжно.
+    let output: AudioNode = destination ?? ctx.destination;
+    if (spec.gain !== undefined && spec.gain !== 1) {
+      const presetGain = ctx.createGain();
+      presetGain.gain.value = spec.gain;
+      presetGain.connect(output);
+      output = presetGain;
+      this.presetGain = presetGain;
+    }
     const sf = Soundfont(ctx, {
       instrument: spec.instrument,
       volume: 100,
       loadLoopData: spec.loadLoopData,
-      destination, // мастер-гейн движка (громкость SPEC §4.8); undefined → ctx.destination
+      destination: output,
       onLoadProgress: (progress) => {
         if (progress.total > 0) notify("loading", progress.loaded / progress.total);
       },
@@ -104,5 +118,7 @@ export class SoundFontSource implements InstrumentSource {
     this.allOff(0, this.releaseSec);
     this.sf?.dispose();
     this.sf = null;
+    this.presetGain?.disconnect();
+    this.presetGain = null;
   }
 }
