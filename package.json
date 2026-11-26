@@ -14,7 +14,8 @@
     "smoke:mapping": "mkdir -p node_modules/.cache && rolldown scripts/smoke-mapping.ts --file node_modules/.cache/smoke-mapping.mjs --format esm --platform node && node node_modules/.cache/smoke-mapping.mjs",
     "smoke:notation": "mkdir -p node_modules/.cache && rolldown scripts/smoke-notation.ts --file node_modules/.cache/smoke-notation.mjs --format esm --platform node && node node_modules/.cache/smoke-notation.mjs",
     "smoke:primer": "mkdir -p node_modules/.cache && rolldown scripts/smoke-primer.ts --file node_modules/.cache/smoke-primer.mjs --format esm --platform node && node node_modules/.cache/smoke-primer.mjs",
-    "smoke:notebook": "mkdir -p node_modules/.cache && rolldown scripts/smoke-notebook.ts --file node_modules/.cache/smoke-notebook.mjs --format esm --platform node && node node_modules/.cache/smoke-notebook.mjs"
+    "smoke:notebook": "mkdir -p node_modules/.cache && rolldown scripts/smoke-notebook.ts --file node_modules/.cache/smoke-notebook.mjs --format esm --platform node && node node_modules/.cache/smoke-notebook.mjs",
+    "smoke:fretboard": "mkdir -p node_modules/.cache && rolldown scripts/smoke-fretboard.ts --file node_modules/.cache/smoke-fretboard.mjs --format esm --platform node && node node_modules/.cache/smoke-fretboard.mjs"
   },
   "dependencies": {
     "@fontsource/bravura": "^5.3.0",
