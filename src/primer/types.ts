@@ -9,7 +9,7 @@
  * notation/geometry. Терминология — GLOSSARY «Азбука».
  */
 import type { GuitarNote } from "../core/fretboard";
-import type { StaffDuration } from "../notation/geometry";
+import type { ClefKind, StaffDuration } from "../notation/geometry";
 
 /**
  * Раздел Азбуки (GLOSSARY): «notation» — уроки по стану (звук по записанной
@@ -97,6 +97,12 @@ export interface PrimerCard {
    * ответа клавишей.
    */
   fretboard?: GuitarNote | null;
+  /**
+   * Ключ стана карточки (GLOSSARY: басовый ключ): «bass» — басовый 𝄢,
+   * определяет места нот на стане. Не задан — скрипичный 𝄞 (дефолт,
+   * уроки 1–6 и «Гитара»).
+   */
+  clef?: ClefKind;
 }
 
 // --- Урок ---

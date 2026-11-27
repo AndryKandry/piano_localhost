@@ -1,15 +1,17 @@
 /**
- * Уроки «Азбуки» (SPEC §4.9): 6 последовательных уроков — стан и скрипичный
- * ключ, первая октава, вторая октава, длительности, паузы, такты и размеры.
+ * Уроки «Азбуки» (SPEC §4.9): 9 последовательных уроков — стан и скрипичный
+ * ключ, первая октава, вторая октава, длительности, паузы, такты и размеры,
+ * басовый ключ, малая октава в басовом ключе, оба ключа (PIANO-13).
  *
  * Каждый урок — генератор серии карточек: 1–2 обучающих факта в начале
  * (без ответа, «Далее») + ответные карточки. Рандомизация лёгкая: какой питч
  * спросить / какой размер дать; rng внедряется (тесты подставляют
  * детерминированную функцию, в рантайме — Math.random). Термины — GLOSSARY
- * «Азбука»: нотный стан, скрипичный ключ, длительность, пауза, такт, размер.
+ * «Азбука»: нотный стан, скрипичный ключ, басовый ключ, длительность,
+ * пауза, такт, размер, малая октава.
  */
 import { pitchName, pitchNameRuFull, pitchNameRuStep } from "../core/layout";
-import { pitchToStaffPos, type StaffDuration } from "../notation/geometry";
+import { pitchToStaffPos, type ClefKind, type StaffDuration } from "../notation/geometry";
 import type { ChoiceAnswer, PrimerCard, PrimerLesson, Rng, StaffItem } from "./types";
 
 // --- Случайность (используется и гитарными уроками guitar-lessons.ts) ---
@@ -82,18 +84,33 @@ const DURATION_COUNT_ALOUD: Record<StaffDuration, string> = {
 };
 
 const ORDINAL_FEM = ["первая", "вторая", "третья", "четвёртая", "пятая"] as const;
+/** Те же порядковые в творительном (под/над чем): «промежуток под первой добавочной». */
+const ORDINAL_FEM_INSTR = ["первой", "второй", "третьей", "четвёртой", "пятой"] as const;
 const ORDINAL_MASC = ["первый", "второй", "третий", "четвёртый"] as const;
 
-/** Человекочитаемая позиция на стане (GLOSSARY: позиция на стане) для справки. */
-function staffPositionName(pos: number): string {
+/**
+ * Человекочитаемая позиция на стане (GLOSSARY: позиция на стане) для справки.
+ * Позиция — относительно нижней линии КЛЮЧА карточки (pitchToStaffPos с clef).
+ * За станом: чётные позиции — добавочные линейки, нечётные — промежутки,
+ * обрамлённые соседними линейками («промежуток под/над N-й добавочной»).
+ */
+export function staffPositionName(pos: number): string {
   if (pos >= 0 && pos <= 8) {
     if (pos % 2 === 0) return `${ORDINAL_FEM[pos / 2]} линия`;
     return `${ORDINAL_MASC[(pos - 1) / 2]} промежуток`;
   }
   if (pos === -1) return "промежуток под станом";
   if (pos === 9) return "промежуток над станом";
-  if (pos < -1) return `${ORDINAL_FEM[-pos / 2 - 1]} добавочная линейка снизу`;
-  return `${ORDINAL_FEM[pos / 2 - 5]} добавочная линейка сверху`;
+  if (pos < -1) {
+    const ordinal = -pos % 2 === 0 ? -pos / 2 : (-pos - 1) / 2; // -2/-3 → первая, -4/-5 → вторая
+    return -pos % 2 === 0
+      ? `${ORDINAL_FEM[ordinal - 1]} добавочная линейка снизу`
+      : `промежуток под ${ORDINAL_FEM_INSTR[ordinal - 1]} добавочной снизу`;
+  }
+  const ordinal = pos % 2 === 0 ? (pos - 8) / 2 : (pos - 9) / 2; // 10/11 → первая, 12/13 → вторая
+  return pos % 2 === 0
+    ? `${ORDINAL_FEM[ordinal - 1]} добавочная линейка сверху`
+    : `промежуток над ${ORDINAL_FEM_INSTR[ordinal - 1]} добавочной сверху`;
 }
 
 // --- Конструкторы карточек ---
@@ -103,24 +120,29 @@ export function namedPitch(pitch: number): string {
   return `${pitchName(pitch)} (${pitchNameRuStep(pitch)})`;
 }
 
-/** Нота на стане → «нажми клавишу» (GLOSSARY: ответ клавишей). */
-function nameTheNote(pitch: number): PrimerCard {
+/**
+ * Нота на стане → «нажми клавишу» (GLOSSARY: ответ клавишей). Позиция в
+ * справке — относительно нижней линии ключа карточки.
+ */
+function nameTheNote(pitch: number, clef: ClefKind = "treble"): PrimerCard {
   return {
     prompt: "Какая нота на стане? Нажми её клавишу",
     staff: [{ kind: "note", pitch, duration: "quarter" }],
-    explanation: `Это ${namedPitch(pitch)} — ${staffPositionName(pitchToStaffPos(pitch))}.`,
+    explanation: `Это ${namedPitch(pitch)} — ${staffPositionName(pitchToStaffPos(pitch, clef))}.`,
     answer: { type: "pitch", pitch },
+    clef,
   };
 }
 
 /** Имя ноты → «сыграй» (GLOSSARY: ответ клавишей, мостик к основному режиму). */
-function playTheNote(pitch: number): PrimerCard {
+function playTheNote(pitch: number, clef: ClefKind = "treble"): PrimerCard {
   return {
     prompt: `Сыграй на клавиатуре ноту ${namedPitch(pitch)}`,
     staff: [],
-    explanation: `Это ${namedPitch(pitch)} — ${staffPositionName(pitchToStaffPos(pitch))}.`,
+    explanation: `Это ${namedPitch(pitch)} — ${staffPositionName(pitchToStaffPos(pitch, clef))}.`,
     answer: { type: "pitch", pitch },
     label: namedPitch(pitch),
+    clef,
   };
 }
 
@@ -218,6 +240,31 @@ const FIRST_OCTAVE = [60, 62, 64, 65, 67, 69, 71] as const;
 const SECOND_OCTAVE = [72, 74, 76, 77, 79, 81, 83] as const;
 /** Ноты на линиях/промежутках стана для урока 1 (E4–B4, без добавочных). */
 const WITHIN_STAFF = [64, 65, 67, 69, 71] as const;
+
+// --- Пулы уроков басового ключа (PIANO-13, уроки 7–9; позиции — bass, G2 = нижняя линия) ---
+
+/**
+ * Непрерывная гамма басового стана G2–B3 (натуральные, позиции 0–9: линии
+ * G2 B2 D3 F3 A3, промежутки A2 C3 E3 G3, над станом — B3) — рисунок факта
+ * урока 7. G2, A2, B2 — большая октава, играются сдвигом Z дважды.
+ */
+const BASS_SCALE = [43, 45, 47, 48, 50, 52, 53, 55, 57, 59] as const;
+
+/** Пул вопросов урока 7: линии G2 B2 D3 F3 A3, промежутки C3 E3 G3, над станом B3. */
+const BASS_STAFF_NOTES = [43, 47, 48, 50, 52, 53, 55, 57, 59] as const;
+
+/** Малая октава C3–B3 (GLOSSARY: малая октава) — пул урока 8, все играются сдвигом Z один раз. */
+const SMALL_OCTAVE = [48, 50, 52, 53, 55, 57, 59] as const;
+
+/**
+ * Пограничные ноты урока 9 «Оба ключа»: одна высота — два места на стане.
+ * G3 — четвёртый промежуток басового / под второй добавочной скрипичного;
+ * B3 — над станом / под первой добавочной; C4 — первая добавочная сверху
+ * басового / снизу скрипичного («средняя до»); D4 — над первой добавочной
+ * басового / под станом скрипичного; E4 — вторая добавочная басового /
+ * нижняя линия скрипичного.
+ */
+const BOTH_CLEFS_PITCHES = [55, 59, 60, 62, 64] as const;
 
 // --- Факты (обучающие карточки без ответа, «Далее») ---
 
@@ -366,6 +413,72 @@ function lesson6Facts(): PrimerCard[] {
   ];
 }
 
+// --- Факты уроков басового ключа (PIANO-13) ---
+
+function lesson7Facts(): PrimerCard[] {
+  const scale: StaffItem[] = BASS_SCALE.map((pitch) => ({ kind: "note", pitch, duration: "quarter" }));
+  return [
+    {
+      prompt: "Это басовый ключ",
+      staff: [{ kind: "note", pitch: 53, duration: "quarter", highlight: true }],
+      explanation:
+        "Басовый ключ (𝄢) стоит в начале стана: две его точки охватывают четвёртую линию — там живёт F3 (фа), она подсвечена. Басовым ключом записывают ноты левой руки: малую октаву C3–B3 и ниже.",
+      answer: null,
+      clef: "bass",
+    },
+    {
+      prompt: "Басовый стан: ноты G2–B3",
+      staff: scale,
+      explanation:
+        "Линии басового стана снизу вверх: G2, B2, D3, F3, A3; промежутки: A2, C3, E3, G3; над станом — B3. Ключ стоит на F3 — от неё легко посчитать остальные. Чтобы играть эти ноты, сдвинь октаву вниз клавишей Z: один раз для C3–B3, дважды для G2–B2.",
+      answer: null,
+      clef: "bass",
+    },
+  ];
+}
+
+function lesson8Facts(): PrimerCard[] {
+  const scale: StaffItem[] = SMALL_OCTAVE.map((pitch) => ({ kind: "note", pitch, duration: "quarter" }));
+  return [
+    {
+      prompt: "Малая октава: C3–B3",
+      staff: scale,
+      explanation: `Малая октава — ${SMALL_OCTAVE.map(namedPitch).join(" ")} — октавой ниже первой, ноты левой руки. На басовом стане: C3 — второй промежуток, F3 — четвёртая линия (на ней стоит ключ), B3 — промежуток над станом.`,
+      answer: null,
+      clef: "bass",
+    },
+    {
+      prompt: "Малая октава на твоей клавиатуре",
+      staff: [{ kind: "note", pitch: 48, duration: "quarter", highlight: true }],
+      explanation:
+        "Сдвинь октаву вниз — клавиша Z (один раз): первая клавиша ряда (Tab) станет C3, и буквенный ряд сыграет C3–B5. Нажми C3 — она подсветится на стане.",
+      answer: null,
+      clef: "bass",
+    },
+  ];
+}
+
+function lesson9Facts(): PrimerCard[] {
+  return [
+    {
+      prompt: "C4 в скрипичном ключе",
+      staff: [{ kind: "note", pitch: 60, duration: "quarter", highlight: true }],
+      explanation:
+        "C4 (до первой октавы) — первая добавочная линейка снизу скрипичного стана. Запомни это место: дальше та же нота встретится в басовом ключе.",
+      answer: null,
+      clef: "treble",
+    },
+    {
+      prompt: "Та же C4 в басовом ключе",
+      staff: [{ kind: "note", pitch: 60, duration: "quarter", highlight: true }],
+      explanation:
+        "В басовом ключе C4 — первая добавочная линейка сверху. Одна нота — два места на стане: имя линии даёт ключ. C4 — «средняя до», граница ключей: ниже записывают басовым, выше — скрипичным.",
+      answer: null,
+      clef: "bass",
+    },
+  ];
+}
+
 // --- Генераторы уроков ---
 
 function generateLesson1(rng: Rng): PrimerCard[] {
@@ -378,12 +491,12 @@ function generateLesson1(rng: Rng): PrimerCard[] {
   return [...lesson1Facts(), ...questions];
 }
 
-function generateScaleLesson(pool: readonly number[], facts: PrimerCard[]) {
+function generateScaleLesson(pool: readonly number[], facts: PrimerCard[], clef: ClefKind = "treble") {
   return (rng: Rng): PrimerCard[] => {
     const picks = shuffled(rng, pool);
     const questions = [
-      ...picks.slice(0, 4).map((pitch) => nameTheNote(pitch)),
-      ...picks.slice(4, 7).map((pitch) => playTheNote(pitch)),
+      ...picks.slice(0, 4).map((pitch) => nameTheNote(pitch, clef)),
+      ...picks.slice(4, 7).map((pitch) => playTheNote(pitch, clef)),
     ];
     return [...facts, ...questions];
   };
@@ -404,7 +517,34 @@ function generateMeasures(rng: Rng): PrimerCard[] {
   return [...lesson6Facts(), ...questions];
 }
 
-/** Уроки v1 (SPEC §4.9) в порядке прохождения; следующий открывается при ≥80%. */
+/** Урок 7 «Басовый ключ»: весь пул басового стана — 5 «какая нота» + 4 «сыграй». */
+function generateBassStaffLesson(rng: Rng): PrimerCard[] {
+  const picks = shuffled(rng, BASS_STAFF_NOTES);
+  const questions = [
+    ...picks.slice(0, 5).map((pitch) => nameTheNote(pitch, "bass")),
+    ...picks.slice(5).map((pitch) => playTheNote(pitch, "bass")),
+  ];
+  return [...lesson7Facts(), ...questions];
+}
+
+/**
+ * Урок 9 «Оба ключа»: пары карточек одной высоты в скрипичном и басовом
+ * ключе идут подряд (какой ключ первым — случайно), чтобы контраст мест
+ * читался сразу; первые три пары — «какая нота», остальные — «сыграй».
+ */
+function generateBothClefs(rng: Rng): PrimerCard[] {
+  const picks = shuffled(rng, BOTH_CLEFS_PITCHES);
+  const questions: PrimerCard[] = [];
+  picks.forEach((pitch, i) => {
+    const treble = i < 3 ? nameTheNote(pitch, "treble") : playTheNote(pitch, "treble");
+    const bass = i < 3 ? nameTheNote(pitch, "bass") : playTheNote(pitch, "bass");
+    const [first, second] = rng() < 0.5 ? [treble, bass] : [bass, treble];
+    questions.push(first, second);
+  });
+  return [...lesson9Facts(), ...questions];
+}
+
+/** Уроки (SPEC §4.9) в порядке прохождения; следующий открывается при ≥80%. */
 export const LESSONS: readonly PrimerLesson[] = [
   {
     id: "staff-clef",
@@ -447,5 +587,26 @@ export const LESSONS: readonly PrimerLesson[] = [
     title: "Такты и размеры",
     description: "4/4 и 3/4, тактовые черты, «сколько долей в такте»",
     generate: generateMeasures,
+  },
+  {
+    id: "bass-clef",
+    order: 7,
+    title: "Басовый ключ",
+    description: "Ключ 𝄢: четвёртая линия = F3; ноты левой руки на басовом стане",
+    generate: generateBassStaffLesson,
+  },
+  {
+    id: "octave-3",
+    order: 8,
+    title: "Малая октава в басовом ключе",
+    description: "C3–B3 — ноты левой руки; октавный сдвиг Z, Tab становится C3",
+    generate: generateScaleLesson(SMALL_OCTAVE, lesson8Facts(), "bass"),
+  },
+  {
+    id: "both-clefs",
+    order: 9,
+    title: "Оба ключа",
+    description: "Одна нота в 𝄞 и 𝄢 — разные места на стане: имя линии даёт ключ",
+    generate: generateBothClefs,
   },
 ];

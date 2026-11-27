@@ -19,6 +19,8 @@ import { HIGHLIGHT_NEXT_COLOR } from "../render/colors";
 import {
   BEAM_THICKNESS_SPACES,
   CLEF_BASELINE_POS,
+  CLEF_CODEPOINTS,
+  F_CLEF_BASELINE_POS,
   FLAG_CODEPOINTS,
   LEDGER_EXTENSION_SPACES,
   LEDGER_THICKNESS_SPACES,
@@ -29,6 +31,7 @@ import {
   TIMESIG_DENOMINATOR_POS,
   TIMESIG_NUMERATOR_POS,
   TOP_LINE_POS,
+  type ClefKind,
   type StaffDuration,
   ledgerLineYs,
   pitchToY,
@@ -53,7 +56,6 @@ export const NOTATION_INK = COLORS.ink;
 
 /** Кодпоинты глифов SMuFL (research 05 §1.1 — таблица из спеки). */
 const SMUFL = {
-  gClef: 0xe050,
   noteheadWhole: 0xe0a2,
   noteheadHalf: 0xe0a3,
   noteheadBlack: 0xe0a4,
@@ -100,6 +102,12 @@ export interface GlyphDrawOptions {
    * строки стана на канвасе); по умолчанию — геометрия setStaffGeometry.
    */
   topY?: number;
+  /**
+   * Ключ, под которым рисуется нота (GLOSSARY: басовый ключ): определяет
+   * её место на стане и штиль. Дефолт «treble» — существующие вызовы
+   * без опций не меняются.
+   */
+  clef?: ClefKind;
 }
 
 export interface LabelOptions {
@@ -174,11 +182,13 @@ export class NotationRenderer {
 
   /**
    * Нотный стан: 5 линий (толщина 0.13 межлинейного, Bravura staffLineThickness)
-   * на [x, x+width] + скрипичный ключ U+E050 у левого края (SMuFL: baseline
-   * ключа = линия G4, здесь — вторая линия). topY — верхняя линия стана;
-   * не задана — геометрия setStaffGeometry (две строки тетради задают свою).
+   * на [x, x+width] + ключ у левого края: скрипичный U+E050 (baseline = линия
+   * G4, вторая линия) или басовый U+E062 (baseline = линия F3, четвёртая
+   * линия) — SMuFL: baseline ключа = referenced pitch. topY — верхняя линия
+   * стана; не задана — геометрия setStaffGeometry (две строки тетради задают
+   * свою). Дефолт clef = «treble» — существующие вызовы не меняются.
    */
-  drawStaff(x: number, width: number, topY: number = this.staffTopY): void {
+  drawStaff(x: number, width: number, topY: number = this.staffTopY, clef: ClefKind = "treble"): void {
     this.requireStaffGeometry();
     const { ctx } = this;
     const ss = this.spacePx;
@@ -188,28 +198,31 @@ export class NotationRenderer {
       const y = topY + i * ss;
       ctx.fillRect(x, y - lineT / 2, width, lineT);
     }
-    // Ключ: 1 em = высота стана = 4 межлинейных; baseline на линии G4.
+    // Ключ: 1 em = высота стана = 4 межлинейных; baseline на линии ключа.
     ctx.fillStyle = COLORS.ink;
     ctx.font = this.bravuraFont();
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    const clefY = topY + ((TOP_LINE_POS - CLEF_BASELINE_POS) * ss) / 2;
-    ctx.fillText(String.fromCodePoint(SMUFL.gClef), x + ss * 0.4, clefY);
+    const clefPos = clef === "bass" ? F_CLEF_BASELINE_POS : CLEF_BASELINE_POS;
+    const clefY = topY + ((TOP_LINE_POS - clefPos) * ss) / 2;
+    ctx.fillText(String.fromCodePoint(CLEF_CODEPOINTS[clef]), x + ss * 0.4, clefY);
   }
 
   /**
-   * Нота с длительностью. Головка центрируется на baseline позиции питча;
-   * штиль — линия толщиной 0.12 межлинейного и длиной 3.5 (вверх — справа от
-   * головки, вниз — слева); флаг восьмой — на кончике штиля (U+E240 вверх /
-   * U+E241 вниз). У целой штиля нет. Добавочные линейки для нот за станом
-   * (C4 и ниже / A5 и выше) — короткие, с выступом 0.4 межлинейного.
+   * Нота с длительностью. Головка центрируется на baseline позиции питча
+   * (позиция — по ключу opts.clef); штиль — линия толщиной 0.12 межлинейного
+   * и длиной 3.5 (вверх — справа от головки, вниз — слева); флаг восьмой —
+   * на кончике штиля (U+E240 вверх / U+E241 вниз). У целой штиля нет.
+   * Добавочные линейки для нот за станом — короткие, с выступом 0.4
+   * межлинейного.
    */
   drawNote(pitch: number, duration: StaffDuration, x: number, opts?: GlyphDrawOptions): void {
     this.requireStaffGeometry();
     const { ctx } = this;
     const ss = this.spacePx;
     const topY = opts?.topY ?? this.staffTopY;
-    const y = pitchToY(pitch, topY, ss);
+    const clef = opts?.clef ?? "treble";
+    const y = pitchToY(pitch, topY, ss, clef);
     const head = HEAD_BY_DURATION[duration];
     const headW = this.glyphWidth(head);
     const highlight = opts?.highlight === true;
@@ -219,7 +232,7 @@ export class NotationRenderer {
     this.applyInk(color, highlight, opts?.dim === true);
 
     // Добавочные линейки — до головки (рисуются под/над ней).
-    const ledgers = ledgerLineYs(pitch, topY, ss);
+    const ledgers = ledgerLineYs(pitch, topY, ss, clef);
     if (ledgers.length > 0) {
       const halfW = headW / 2 + LEDGER_EXTENSION_SPACES * ss;
       const ledgerT = LEDGER_THICKNESS_SPACES * ss;
@@ -231,10 +244,10 @@ export class NotationRenderer {
 
     // Штиль и флаг — у целой нет.
     if (duration !== "whole") {
-      const dir = stemDirection(pitch);
+      const dir = stemDirection(pitch, clef);
       const stemT = STEM_THICKNESS_SPACES * ss;
       const stemX = dir === "up" ? x + headW / 2 - stemT : x - headW / 2;
-      const tipY = opts?.stemTipY ?? stemTipY(pitch, topY, ss);
+      const tipY = opts?.stemTipY ?? stemTipY(pitch, topY, ss, clef);
       const len = Math.abs(tipY - y);
       ctx.fillRect(stemX, Math.min(y, tipY), stemT, len);
       if (duration === "eighth" && opts?.inBeam !== true) {
