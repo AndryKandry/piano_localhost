@@ -77,6 +77,18 @@ export function initControls(deps: ControlsDeps): ControlsApi {
   const metroLabel = el("label", "check-label", "Метроном");
   metroLabel.htmlFor = metroCheck.id;
 
+  // --- Нотный стан (PIANO-16, бэклог SPEC §8): мелодия станом вместо падающих
+  // нот, persist в настройки. Стан рисуется в обучении/автоплее; в свободной
+  // игре поле пусто при любом значении. Хоткея нет — только чекбокс.
+  const staffCheck = el("input") as HTMLInputElement;
+  staffCheck.type = "checkbox";
+  staffCheck.id = "staffDisplayCheck";
+  staffCheck.addEventListener("change", () => {
+    settings.update({ melodyDisplay: staffCheck.checked ? "staff" : "falling" });
+  });
+  const staffLabel = el("label", "check-label", "Стан");
+  staffLabel.htmlFor = staffCheck.id;
+
   // --- Множитель скорости ---
   const multSlider = el("input") as HTMLInputElement;
   multSlider.type = "range";
@@ -118,6 +130,8 @@ export function initControls(deps: ControlsDeps): ControlsApi {
     waitLabel,
     metroCheck,
     metroLabel,
+    staffCheck,
+    staffLabel,
     sliderGroup("Множитель", multSlider, multValue),
     sliderGroup("Окно", windowSlider, windowValue),
     wrapWithLabel("Мелодия:", songTitle),
@@ -130,6 +144,7 @@ export function initControls(deps: ControlsDeps): ControlsApi {
     hand: "",
     wait: false as boolean,
     metro: false as boolean,
+    staff: false as boolean,
     mult: "",
     window: "",
     start: null as boolean | null,
@@ -183,6 +198,11 @@ export function initControls(deps: ControlsDeps): ControlsApi {
       if (player.isMetronomeOn !== cache.metro) {
         cache.metro = player.isMetronomeOn;
         metroCheck.checked = player.isMetronomeOn;
+      }
+      const staffOn = settings.get().melodyDisplay === "staff";
+      if (staffOn !== cache.staff) {
+        cache.staff = staffOn;
+        staffCheck.checked = staffOn;
       }
 
       const multText = `×${player.speedMultiplier.toFixed(2)}`;

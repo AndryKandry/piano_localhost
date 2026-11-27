@@ -30,6 +30,16 @@ export type GuitarHintMode = "keyboard" | "fretboard" | "none";
 
 export const GUITAR_HINT_MODES: readonly GuitarHintMode[] = ["keyboard", "fretboard", "none"];
 
+/**
+ * Отображение мелодии на игровом поле (PIANO-16, бэклог SPEC §8): «falling» —
+ * падающие колонки (дефолт), «staff» — нотный стан с бегущим окном чтения
+ * (курсор на ~25% ширины). Стан рисуется только в обучении/автоплее; в
+ * свободной игре поле пусто, как раньше (SPEC §4.3).
+ */
+export type MelodyDisplay = "falling" | "staff";
+
+export const MELODY_DISPLAYS: readonly MelodyDisplay[] = ["falling", "staff"];
+
 export interface Settings {
   partyColors: PartyColors;
   /** Имена нот на экранных клавишах (SPEC §4.1). */
@@ -50,6 +60,9 @@ export interface Settings {
   guitarNotebookHint: GuitarHintMode;
   /** Метроном в обучении/автоплее (SPEC §4.3). Выкл по умолчанию. */
   metronomeOn: boolean;
+  /** Отображение мелодии: падающие колонки или нотный стан (PIANO-16).
+      Дефолт falling — падающие ноты остаются основным режимом. */
+  melodyDisplay: MelodyDisplay;
 }
 
 export const SETTINGS_VERSION = 1;
@@ -67,6 +80,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   notebookKeyHint: true,
   guitarNotebookHint: "keyboard",
   metronomeOn: false,
+  melodyDisplay: "falling",
 };
 
 const STORAGE_KEY = "piano.settings";
@@ -113,6 +127,11 @@ export function normalizeSettings(raw: unknown): Settings {
         : DEFAULT_SETTINGS.defaultPreset,
     showScore: typeof src.showScore === "boolean" ? src.showScore : DEFAULT_SETTINGS.showScore,
     metronomeOn: typeof src.metronomeOn === "boolean" ? src.metronomeOn : DEFAULT_SETTINGS.metronomeOn,
+    melodyDisplay:
+      typeof src.melodyDisplay === "string" &&
+      (MELODY_DISPLAYS as ReadonlyArray<string>).includes(src.melodyDisplay)
+        ? (src.melodyDisplay as MelodyDisplay)
+        : DEFAULT_SETTINGS.melodyDisplay,
   };
 }
 

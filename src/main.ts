@@ -30,6 +30,7 @@ import { Metronome } from "./audio/metronome";
 import { KeyboardInput } from "./input/keyboard";
 import { KeyboardRenderer } from "./render/keyboard";
 import { NoteFieldRenderer } from "./render/notefield";
+import { SongStaffRenderer } from "./render/songstaff";
 import { computeKeyHighlight } from "./render/highlight";
 import { applyPartyColors } from "./render/colors";
 import { Player, HAND_MODE_NAMES, PLAYER_MODE_NAMES, type HandMode, type PlayerMode } from "./player/player";
@@ -41,6 +42,7 @@ import { initSidePanel } from "./ui/panels";
 import { initDialogs } from "./ui/dialogs";
 import { initScoreScreen } from "./ui/score";
 import { initPrimerScreen } from "./primer/screen";
+import { ensureBravura, NotationRenderer } from "./notation";
 import { showToast } from "./ui/toast";
 import { formatDuration, requireEl } from "./ui/dom";
 import type { Melody, LoadState, PresetId } from "./core/types";
@@ -262,6 +264,7 @@ const dialogs = initDialogs({
   onApply: (id, melody) => {
     player.loadMelody(melody); // resplitMelody уже вернул свежую копию с новыми партиями
     notefield.resetMelodyCache(); // id и число нот те же — кэш держит старые объекты нот
+    songstaff.resetMelodyCache(); // кэш нот стана — по той же причине
     activeMelodyId = id;
     panels.setActiveMelody(id);
   },
@@ -458,6 +461,11 @@ const noteCanvas = requireEl<HTMLCanvasElement>("noteCanvas");
 
 const keyboardRenderer = new KeyboardRenderer(keyboardCanvas);
 const notefield = new NoteFieldRenderer(noteCanvas);
+// Нотный стан (PIANO-16): тот же #noteCanvas, но рисует ЛИБО notefield, ЛИБО
+// songstaff — по настройке melodyDisplay (чекбокс «Стан», SPEC §8 бэклог).
+// Рисунок стана — рендер «Азбуки»; шрифт Bravura — лениво при первом кадре.
+const songstaff = new SongStaffRenderer(noteCanvas, new NotationRenderer(noteCanvas));
+let staffFontRequested = false;
 
 let layoutDirty = true;
 let layout: KeyboardLayout | null = null;
@@ -470,6 +478,7 @@ function ensureLayout(): KeyboardLayout {
     keyboardStateKey = null; // форсируем render — иначе клавиатура останется пустой
   }
   notefield.resize();
+  songstaff.resize(); // тот же элемент канваса — оба кэша размера держим свежими
   if (layoutDirty || !layout) {
     const { width, height } = keyboardRenderer.size;
     layout = computeKeyboardLayout(width, height, mapping.pitches());
@@ -506,13 +515,35 @@ function drawFrame(): void {
     const melody = player.currentMelody;
     const songTime = player.songTime();
 
-    notefield.draw({
-      melody,
-      showNotes: player.currentMode !== "free" && melody !== null,
-      songTime,
-      layout: currentLayout,
-      nowSec: clock.currentTime(),
-    });
+    // Нотный стан (PIANO-16): только в обучении/автоплее с мелодией; в
+    // свободной игре поле пусто, как раньше (SPEC §4.3). Ровно один рендер
+    // рисует #noteCanvas в кадре — буферы не конфликтуют.
+    const staffMode = settings.get().melodyDisplay === "staff" && melody !== null && player.currentMode !== "free";
+    if (staffMode && melody) {
+      // Шрифт глифов (SMuFL) лениво при первом кадре стана; до загрузки стан
+      // виден линиями — головки появятся с шрифтом.
+      if (!staffFontRequested) {
+        staffFontRequested = true;
+        void ensureBravura().catch((error: unknown) =>
+          console.error("Не удалось загрузить шрифт Bravura", error),
+        );
+      }
+      songstaff.draw({
+        melody,
+        songTime,
+        autoplay: player.currentMode === "autoplay",
+        isPlayable: (note) => player.isPlayableNote(note),
+        hitWindowSec: player.hitWindowSec,
+      });
+    } else {
+      notefield.draw({
+        melody,
+        showNotes: player.currentMode !== "free" && melody !== null,
+        songTime,
+        layout: currentLayout,
+        nowSec: clock.currentTime(),
+      });
+    }
 
     // Свободная игра — подсветки партий нет (SPEC §4.3: режим без нот).
     const highlight =
