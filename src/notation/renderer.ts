@@ -17,6 +17,7 @@
  */
 import { HIGHLIGHT_NEXT_COLOR } from "../render/colors";
 import {
+  ACCIDENTAL_CODEPOINTS,
   BEAM_THICKNESS_SPACES,
   CLEF_BASELINE_POS,
   CLEF_CODEPOINTS,
@@ -31,6 +32,7 @@ import {
   TIMESIG_DENOMINATOR_POS,
   TIMESIG_NUMERATOR_POS,
   TOP_LINE_POS,
+  type AccidentalKind,
   type ClefKind,
   type StaffDuration,
   ledgerLineYs,
@@ -38,6 +40,7 @@ import {
   restBaselinePos,
   stemDirection,
   stemTipY,
+  writtenPitch,
 } from "./geometry";
 import { BRAVURA_FAMILY } from "./font";
 
@@ -108,6 +111,13 @@ export interface GlyphDrawOptions {
    * без опций не меняются.
    */
   clef?: ClefKind;
+  /**
+   * Знак альтерации (GLOSSARY: диез/бемоль/бекар) слева от головки, baseline
+   * — на позиции ноты (SMuFL: baseline знака = его место на стане). Письменная
+   * позиция — writtenPitch: ♭ стоит у буквы на полтона выше (D♭4 = 61 пишется
+   * на D4). Не задан — нота без знака, существующие вызовы не меняются.
+   */
+  accidental?: AccidentalKind | null;
 }
 
 export interface LabelOptions {
@@ -209,12 +219,14 @@ export class NotationRenderer {
   }
 
   /**
-   * Нота с длительностью. Головка центрируется на baseline позиции питча
-   * (позиция — по ключу opts.clef); штиль — линия толщиной 0.12 межлинейного
-   * и длиной 3.5 (вверх — справа от головки, вниз — слева); флаг восьмой —
-   * на кончике штиля (U+E240 вверх / U+E241 вниз). У целой штиля нет.
-   * Добавочные линейки для нот за станом — короткие, с выступом 0.4
-   * межлинейного.
+   * Нота с длительностью. Головка центрируется на baseline письменной позиции
+   * (writtenPitch: у ♭ — буква на полтона выше питча; позиция — по ключу
+   * opts.clef); знак альтерации opts.accidental — слева от головки на той же
+   * baseline (♯ U+E262 / ♭ U+E260 / ♮ U+E261); штиль — линия толщиной 0.12
+   * межлинейного и длиной 3.5 (вверх — справа от головки, вниз — слева);
+   * флаг восьмой — на кончике штиля (U+E240 вверх / U+E241 вниз). У целой
+   * штиля нет. Добавочные линейки для нот за станом — короткие, с выступом
+   * 0.4 межлинейного.
    */
   drawNote(pitch: number, duration: StaffDuration, x: number, opts?: GlyphDrawOptions): void {
     this.requireStaffGeometry();
@@ -222,7 +234,9 @@ export class NotationRenderer {
     const ss = this.spacePx;
     const topY = opts?.topY ?? this.staffTopY;
     const clef = opts?.clef ?? "treble";
-    const y = pitchToY(pitch, topY, ss, clef);
+    const acc = opts?.accidental ?? null;
+    const written = writtenPitch(pitch, acc); // позиция письма (♭ — буква выше)
+    const y = pitchToY(written, topY, ss, clef);
     const head = HEAD_BY_DURATION[duration];
     const headW = this.glyphWidth(head);
     const highlight = opts?.highlight === true;
@@ -232,11 +246,18 @@ export class NotationRenderer {
     this.applyInk(color, highlight, opts?.dim === true);
 
     // Добавочные линейки — до головки (рисуются под/над ней).
-    const ledgers = ledgerLineYs(pitch, topY, ss, clef);
+    const ledgers = ledgerLineYs(written, topY, ss, clef);
     if (ledgers.length > 0) {
       const halfW = headW / 2 + LEDGER_EXTENSION_SPACES * ss;
       const ledgerT = LEDGER_THICKNESS_SPACES * ss;
       for (const ly of ledgers) ctx.fillRect(x - halfW, ly - ledgerT / 2, halfW * 2, ledgerT);
+    }
+
+    // Знак альтерации — слева от головки, впритык (SMuFL: baseline знака на
+    // позиции ноты); раскладчик слотов карточки сдвигает x на полширины знака.
+    if (acc !== null) {
+      const accW = this.glyphWidth(ACCIDENTAL_CODEPOINTS[acc]);
+      this.drawGlyph(ACCIDENTAL_CODEPOINTS[acc], x - headW / 2 - accW / 2, y, "center");
     }
 
     // Головка: SMuFL регистрирует её центром на baseline.
@@ -244,10 +265,10 @@ export class NotationRenderer {
 
     // Штиль и флаг — у целой нет.
     if (duration !== "whole") {
-      const dir = stemDirection(pitch, clef);
+      const dir = stemDirection(written, clef);
       const stemT = STEM_THICKNESS_SPACES * ss;
       const stemX = dir === "up" ? x + headW / 2 - stemT : x - headW / 2;
-      const tipY = opts?.stemTipY ?? stemTipY(pitch, topY, ss, clef);
+      const tipY = opts?.stemTipY ?? stemTipY(written, topY, ss, clef);
       const len = Math.abs(tipY - y);
       ctx.fillRect(stemX, Math.min(y, tipY), stemT, len);
       if (duration === "eighth" && opts?.inBeam !== true) {
@@ -402,7 +423,12 @@ export class NotationRenderer {
     ctx.fillText(String.fromCodePoint(codepoint), x, y);
   }
 
-  private glyphWidth(codepoint: number): number {
+  /**
+   * Ширина глифа Bravura (CSS-px) при текущем масштабе стана. Публичная для
+   * раскладчиков (карточка азбуки сдвигает x ноты со знаком альтерации на
+   * полширины знака — знаку нужно место слева в слоте).
+   */
+  glyphWidth(codepoint: number): number {
     const cached = this.glyphWidthCache.get(codepoint);
     if (cached !== undefined) return cached;
     this.ctx.font = this.bravuraFont();

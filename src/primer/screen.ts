@@ -31,7 +31,15 @@
  * по паттерну тетради, подсказка «Клавиатура | Гриф | Нет».
  */
 import { ensureBravura, NotationRenderer, NOTATION_INK } from "../notation/index";
-import { THIN_BARLINE_THICKNESS_SPACES, layoutMeasure, pitchToStaffPos, type ClefKind } from "../notation/geometry";
+import {
+  ACCIDENTAL_CODEPOINTS,
+  THIN_BARLINE_THICKNESS_SPACES,
+  layoutMeasure,
+  pitchToStaffPos,
+  writtenPitch,
+  type AccidentalKind,
+  type ClefKind,
+} from "../notation/geometry";
 import { computeKeyboardLayout, pitchName, type KeyboardLayout } from "../core/layout";
 import { KeyboardRenderer } from "../render/keyboard";
 import { FretboardRenderer } from "../render/fretboard";
@@ -329,7 +337,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   }
 
   /**
-   * Номер урока в списке и заголовке: нотные — «1»…«6», гитарные — «Г1»…«Г6»
+   * Номер урока в списке и заголовке: нотные — «1»…«11», гитарные — «Г1»…«Г6»
    * (research 06: своя последовательность, номера не смешиваются).
    */
   function lessonNumber(lesson: PrimerLesson): string {
@@ -440,7 +448,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     const clef = card.clef ?? "treble";
     const pitches = card.staff
       .filter((item): item is StaffNote => item.kind === "note")
-      .map((note) => note.pitch);
+      .map((note) => writtenPitch(note.pitch, note.accidental)); // ♭ пишется буквой выше
     const highlight = currentHighlightPitch();
     if (highlight !== null) pitches.push(highlight);
     if (pitches.length === 0) return null;
@@ -665,7 +673,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   // --- Рисование карточки на стане ---
 
   function drawCard(card: PrimerCard, highlightPitch: number | null): void {
-    drawStaffContent(card.staff, card.label ?? null, highlightPitch, card.clef ?? "treble");
+    drawStaffContent(card.staff, card.label ?? null, highlightPitch, card.clef ?? "treble", card.answerAccidental);
   }
 
   function drawStaffContent(
@@ -673,6 +681,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     label: string | null,
     highlightPitch: number | null,
     clef: ClefKind = "treble",
+    answerAccidental: AccidentalKind | undefined = undefined,
   ): void {
     const { width, height } = renderer.size;
     const ss = renderer.staffSpace;
@@ -681,9 +690,14 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     renderer.drawStaff(margin, width - margin * 2, renderer.staffTop, clef);
     drawItems(items, highlightPitch, margin, ss, clef);
 
-    // Питч-подсветка без ноты на стане («сыграй»-карточка): показать верную ноту.
+    // Питч-подсветка без ноты на стане («сыграй»-карточка): показать верную
+    // ноту — с её знаком альтерации, если карточка задаёт его (уроки 10–11).
     if (highlightPitch !== null && !items.some((item) => item.kind === "note" && item.pitch === highlightPitch)) {
-      renderer.drawNote(highlightPitch, "quarter", width / 2, { highlight: true, clef });
+      renderer.drawNote(highlightPitch, "quarter", width / 2, {
+        highlight: true,
+        clef,
+        accidental: answerAccidental ?? null,
+      });
     }
     if (label) {
       renderer.drawLabel(label, width / 2, height - ss * 0.7, { sizePx: Math.round(ss * 0.95), color: NOTATION_INK });
@@ -779,7 +793,15 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   function drawItem(item: StaffItem, x: number, highlightPitch: number | null, clef: ClefKind): void {
     if (item.kind === "note") {
       const highlight = item.highlight === true || item.pitch === highlightPitch;
-      renderer.drawNote(item.pitch, item.duration, x, { highlight, clef });
+      const acc = item.accidental ?? null;
+      let noteX = x;
+      if (acc !== null) {
+        // Знаку нужно место слева в слоте: головка смещается на полширины
+        // знака (layoutMeasure не знает про знаки — сдвиг только в слоте).
+        const accW = renderer.glyphWidth(ACCIDENTAL_CODEPOINTS[acc]);
+        noteX = x + accW / 2;
+      }
+      renderer.drawNote(item.pitch, item.duration, noteX, { highlight, clef, accidental: acc });
     } else if (item.kind === "rest") {
       renderer.drawRest(item.duration, x, { highlight: item.highlight === true });
     }

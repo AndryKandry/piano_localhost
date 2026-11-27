@@ -9,8 +9,8 @@
  * басовый ключ): в скрипичном E4 (MIDI 64), в басовом G2 (MIDI 43);
  * функции принимают clef с дефолтом «treble» — существующие вызовы
  * не меняются. Каждая позиция = один диатонический шаг; альтерированные
- * ноты (♯/♭) стоят на позиции своей натуральной буквы — в v1 азбуки
- * альтераций нет, но геометрия уже корректна.
+ * ноты стоят на позиции своей ПИСЬМЕННОЙ буквы (GLOSSARY: альтерация):
+ * ♯ и ♮ наследуют букву питча, ♭ — букву на полтона выше (writtenPitch).
  *
  * Все функции, работающие в пикселях, принимают staffSpace (межлинейное
  * расстояние, CSS-px) и staffTop (y верхней линии) явно — рендер
@@ -25,6 +25,9 @@ export type StemDirection = "up" | "down";
 
 /** Ключ стана (GLOSSARY: скрипичный ключ, басовый ключ): «treble» 𝄞 / «bass» 𝄢. */
 export type ClefKind = "treble" | "bass";
+
+/** Знак альтерации (GLOSSARY: диез/бемоль/бекар): ♯ вверх, ♭ вниз, ♮ отмена. */
+export type AccidentalKind = "sharp" | "flat" | "natural";
 
 /** Число линий стана. */
 export const STAFF_LINE_COUNT = 5;
@@ -64,6 +67,17 @@ export const THIN_BARLINE_THICKNESS_SPACES = 0.16;
 /** Кодпоинты флага восьмой (SMuFL PUA, research 05 §1.1): направление штиля → глиф. */
 export const FLAG_CODEPOINTS = { up: 0xe240, down: 0xe241 } as const;
 
+/**
+ * Кодпоинты знаков альтерации (SMuFL accidentalSharp/Flat/Natural): знак →
+ * глиф. Присутствие в Bravura проверено разбором cmap woff2
+ * (tmp-скрипт задачи PIANO-14): U+E262, U+E260, U+E261 — все есть.
+ */
+export const ACCIDENTAL_CODEPOINTS: Record<AccidentalKind, number> = {
+  sharp: 0xe262,
+  flat: 0xe260,
+  natural: 0xe261,
+} as const;
+
 /** Длительность в четвертных долях — для пропорциональной раскладки такта. */
 export const DURATION_BEATS: Record<StaffDuration, number> = {
   whole: 4,
@@ -97,6 +111,17 @@ export function pitchToStaffPos(pitch: number, clef: ClefKind = "treble"): numbe
   const octave = Math.floor(pitch / 12) - 1;
   const letter = LETTER_BY_PITCH_CLASS[((pitch % 12) + 12) % 12];
   return octave * 7 + letter - bottomLineDiatonic(clef);
+}
+
+/**
+ * Питч ПИСЬМЕННОЙ позиции ноты (GLOSSARY: альтерация): ♯ и ♮ пишутся на
+ * позиции своей натуральной буквы (сама нота — диезы схлопываются в букву
+ * уже в pitchToStaffPos), ♭ — на позиции буквы НА ПОЛТОНА ВЫШЕ: D♭4 звучит
+ * 61, но пишется на D4 (62). Позиция на стане — pitchToStaffPos от этого
+ * питча; y, штиль и добавочные линейки ноты считаются от него же.
+ */
+export function writtenPitch(pitch: number, accidental: AccidentalKind | null | undefined): number {
+  return accidental === "flat" ? pitch + 1 : pitch;
 }
 
 /** Обратно: натуральный питч (MIDI) позиции на стане. Диезы схлопываются в натуральную букву. */

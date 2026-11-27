@@ -2,7 +2,8 @@
  * Smoke-проверка геометрии нотного стана модуля «Азбука» (ADR-007) — чистая
  * математика src/notation/geometry.ts: позиции нот (скрипичный и басовый
  * ключ, PIANO-13), y-координаты и roundtrip кликов, направление и длина
- * штиля, добавочные линейки, позиции пауз и размера, раскладка такта.
+ * штиля, добавочные линейки, позиции пауз и размера, раскладка такта,
+ * знаки альтерации: кодпоинты ♯♭♮ и письменная позиция ♭ (PIANO-14).
  * Запуск: npm run smoke:notation.
  *
  * САМ РЕНДЕР (renderer.ts: глифы Bravura, штили, подсветка) в node НЕ
@@ -11,6 +12,7 @@
  * проверяются только соотношения, кодпоинты и чистые функции.
  */
 import {
+  ACCIDENTAL_CODEPOINTS,
   BEAM_SPACING_SPACES,
   BEAM_THICKNESS_SPACES,
   BOTTOM_LINE_POS,
@@ -40,6 +42,7 @@ import {
   stemDirection,
   stemLengthPx,
   stemTipY,
+  writtenPitch,
   yToPitch,
   type StaffDuration,
 } from "../src/notation/geometry";
@@ -69,7 +72,7 @@ function testStaffPositions(): void {
   assertEqual(pitchToStaffPos(83), 11, "B5 — промежуток над первой добавочной сверху");
   assertEqual(pitchToStaffPos(84), 12, "C6 — вторая добавочная сверху");
   assertEqual(pitchToStaffPos(69), 3, "A4 — промежуток");
-  assertEqual(pitchToStaffPos(61), -2, "C#4 стоит на позиции своей буквы C4 (альтераций в v1 нет)");
+  assertEqual(pitchToStaffPos(61), -2, "C#4 стоит на позиции своей буквы C4 (письмо диеза)");
 
   // Обратное соответствие линий и натуральных нот.
   assertEqual(staffPosToPitch(0), 64, "позиция 0 → E4");
@@ -311,6 +314,53 @@ function testBassClef(): void {
   console.log("  OK: fClef E062 на F3, линии G2–A3, C3 во 2-м промежутке, штили от D3, дефолт treble сохранён");
 }
 
+// --- 9. Альтерация (PIANO-14): кодпоинты ♯♭♮, письменная позиция ♭, штиль ---
+
+function testAccidentals(): void {
+  console.log("Альтерация (PIANO-14):");
+  // Кодпоинты SMuFL: присутствие в cmap woff2 Bravura проверено разбором
+  // (sharpAccidental E262, flatAccidental E260, naturalAccidental E261).
+  assertEqual(ACCIDENTAL_CODEPOINTS.sharp, 0xe262, "диез sharpAccidental U+E262 (в cmap Bravura)");
+  assertEqual(ACCIDENTAL_CODEPOINTS.flat, 0xe260, "бемоль flatAccidental U+E260 (в cmap Bravura)");
+  assertEqual(ACCIDENTAL_CODEPOINTS.natural, 0xe261, "бекар naturalAccidental U+E261 (в cmap Bravura)");
+
+  // Письменная позиция (writtenPitch): ♭ — буква на полтона выше, ♯/♮ — своя.
+  assertEqual(writtenPitch(61, "sharp"), 61, "C♯4 (61) пишется на своей букве C4");
+  assertEqual(writtenPitch(61, "natural"), 61, "бекар не меняет письменную букву");
+  assertEqual(writtenPitch(61, null), 61, "null — нота без знака, без изменений");
+  assertEqual(writtenPitch(61, undefined), 61, "undefined — нота без знака, без изменений");
+  assertEqual(writtenPitch(61, "flat"), 62, "D♭4 (61) пишется на D4 (62) — буква на полтона выше");
+
+  // Позиции урока 11 (скрипичный): ♭ поднимает письменную позицию на один шаг.
+  assertEqual(pitchToStaffPos(writtenPitch(61, "flat")), -1, "D♭4 — позиция D4 (промежуток под станом)");
+  assertEqual(pitchToStaffPos(writtenPitch(63, "flat")), 0, "E♭4 — позиция E4 (нижняя линия)");
+  assertEqual(pitchToStaffPos(writtenPitch(68, "flat")), 3, "A♭4 — позиция A4 (третий промежуток)");
+  assertEqual(pitchToStaffPos(writtenPitch(70, "flat")), 4, "B♭4 — позиция B4 (средняя линия)");
+  // Диез остаётся на букве питча (пул урока 10).
+  assertEqual(pitchToStaffPos(writtenPitch(66, "sharp")), 1, "F♯4 — позиция F4 (первый промежуток)");
+
+  // Штиль — по письменной позиции: B♭4 на средней линии — вниз, хотя без
+  // поправки 70 (A♯4) был бы вверх. Рисование знака слева от головки
+  // (renderer.drawNote, opts.accidental) — живой браузер и шрифт (research 05 §8).
+  assertEqual(stemDirection(writtenPitch(70, "flat")), "down", "B♭4 на средней линии — штиль вниз (по букве B4)");
+  assertEqual(stemDirection(70), "up", "без письменной поправки 70 — вверх (контраст)");
+  assertEqual(stemDirection(writtenPitch(61, "sharp")), "up", "C♯4 на добавочной снизу — штиль вверх");
+
+  // Пары урока 11 «♯/♭ → ♮»: обе ноты на одной письменной позиции.
+  const pair = { flatFirst: 61, flatNatural: 62, sharpFirst: 66, sharpNatural: 65 };
+  assertEqual(
+    pitchToStaffPos(writtenPitch(pair.flatFirst, "flat")),
+    pitchToStaffPos(writtenPitch(pair.flatNatural, "natural")),
+    "D♭4 → D♮4: одна письменная позиция (D4)",
+  );
+  assertEqual(
+    pitchToStaffPos(writtenPitch(pair.sharpFirst, "sharp")),
+    pitchToStaffPos(writtenPitch(pair.sharpNatural, "natural")),
+    "F♯4 → F♮4: одна письменная позиция (F4)",
+  );
+  console.log("  OK: кодпоинты E262/E260/E261, ♭ пишется буквой выше, штиль по букве, пары ♮ на месте ♯/♭");
+}
+
 function main(): void {
   testStaffPositions();
   testPitchToY();
@@ -320,6 +370,7 @@ function main(): void {
   testEngravingDefaults();
   testMeasureLayout();
   testBassClef();
+  testAccidentals();
   console.log(`SMOKE OK: ${checks} проверок пройдено`);
 }
 

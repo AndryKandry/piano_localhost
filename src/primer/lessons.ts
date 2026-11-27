@@ -1,17 +1,19 @@
 /**
- * Уроки «Азбуки» (SPEC §4.9): 9 последовательных уроков — стан и скрипичный
+ * Уроки «Азбуки» (SPEC §4.9): 11 последовательных уроков — стан и скрипичный
  * ключ, первая октава, вторая октава, длительности, паузы, такты и размеры,
- * басовый ключ, малая октава в басовом ключе, оба ключа (PIANO-13).
+ * басовый ключ, малая октава в басовом ключе, оба ключа (PIANO-13),
+ * альтерация: диезы, бемоли и бекары (PIANO-14, уроки 10–11).
  *
  * Каждый урок — генератор серии карточек: 1–2 обучающих факта в начале
  * (без ответа, «Далее») + ответные карточки. Рандомизация лёгкая: какой питч
  * спросить / какой размер дать; rng внедряется (тесты подставляют
  * детерминированную функцию, в рантайме — Math.random). Термины — GLOSSARY
  * «Азбука»: нотный стан, скрипичный ключ, басовый ключ, длительность,
- * пауза, такт, размер, малая октава.
+ * пауза, такт, размер, малая октава, альтерация, диез/бемоль/бекар,
+ * энгармонизм.
  */
 import { pitchName, pitchNameRuFull, pitchNameRuStep } from "../core/layout";
-import { pitchToStaffPos, type ClefKind, type StaffDuration } from "../notation/geometry";
+import { pitchToStaffPos, writtenPitch, type AccidentalKind, type ClefKind, type StaffDuration } from "../notation/geometry";
 import type { ChoiceAnswer, PrimerCard, PrimerLesson, Rng, StaffItem } from "./types";
 
 // --- Случайность (используется и гитарными уроками guitar-lessons.ts) ---
@@ -146,6 +148,83 @@ function playTheNote(pitch: number, clef: ClefKind = "treble"): PrimerCard {
   };
 }
 
+// --- Альтерация (PIANO-14, уроки 10–11): конструкторы карточек ---
+
+/**
+ * Письменное имя бемольной ноты: буква берётся у питча НА ПОЛТОНА ВЫШЕ
+ * (D♭4 звучит 61, пишется на D4 = 62 — GLOSSARY: альтерация): «D♭4».
+ */
+function flatName(pitch: number): string {
+  return pitchName(pitch + 1).replace(/^([A-G])/, "$1♭");
+}
+
+/** Русское имя бемольной ноты по письменной букве: «ре-бемоль». */
+function flatRuName(pitch: number): string {
+  return `${pitchNameRuStep(pitch + 1)}-бемоль`;
+}
+
+/** Нота со ♯ на стане → «какая?» (GLOSSARY: диез = полтона вверх, чёрная клавиша). */
+function nameTheSharp(pitch: number): PrimerCard {
+  return {
+    prompt: "Какая нота на стане? Нажми её клавишу",
+    staff: [{ kind: "note", pitch, duration: "quarter", accidental: "sharp" }],
+    explanation: `Это ${namedPitch(pitch)} — ${staffPositionName(pitchToStaffPos(pitch))} с диезом: ♯ поднимает ноту на полтона, звучит чёрной клавишей.`,
+    answer: { type: "pitch", pitch },
+  };
+}
+
+/** Имя со ♯ → «сыграй»: стан пуст, верная нота после вердикта — со знаком. */
+function playTheSharp(pitch: number): PrimerCard {
+  return {
+    prompt: `Сыграй на клавиатуре ноту ${namedPitch(pitch)}`,
+    staff: [],
+    explanation: `Это ${namedPitch(pitch)} — чёрная клавиша между ${namedPitch(pitch - 1)} и ${namedPitch(pitch + 1)}: диез (♯) = полтона вверх.`,
+    answer: { type: "pitch", pitch },
+    label: namedPitch(pitch),
+    answerAccidental: "sharp",
+  };
+}
+
+/** Нота со ♭ на стане → «какая?» (GLOSSARY: бемоль = полтона вниз, энгармонизм). */
+function nameTheFlat(pitch: number): PrimerCard {
+  return {
+    prompt: "Какая нота на стане? Нажми её клавишу",
+    staff: [{ kind: "note", pitch, duration: "quarter", accidental: "flat" }],
+    explanation: `Знак ♭ у ${staffPositionName(pitchToStaffPos(writtenPitch(pitch, "flat")))}: это ${flatName(pitch)} (${flatRuName(pitch)}) — на полтона ниже письменной буквы; звучит как ${namedPitch(pitch)} — та же чёрная клавиша (энгармонизм).`,
+    answer: { type: "pitch", pitch },
+  };
+}
+
+/** Пара нот с бекаром: первая альтерированная, вторая — ♮ той же буквы. */
+interface NaturalPair {
+  /** Звучание первой (альтерированной) ноты. */
+  first: number;
+  /** Её знак (♯ или ♭ — определяет письменную позицию пары). */
+  firstAccidental: AccidentalKind;
+  /** Звучание второй (натуральной, со ♮) — ответ карточки. */
+  natural: number;
+}
+
+/**
+ * Карточка-пара «♯/♭ → ♮»: знак бекар отменяет альтерацию первой ноты —
+ * обе ноты на стане на одной письменной букве (writtenPitch совпадает).
+ */
+function naturalPairCard(pair: NaturalPair): PrimerCard {
+  const firstName =
+    pair.firstAccidental === "flat"
+      ? `${flatName(pair.first)} (${flatRuName(pair.first)})`
+      : namedPitch(pair.first);
+  return {
+    prompt: "Какая нота со знаком бекар? Нажми её клавишу",
+    staff: [
+      { kind: "note", pitch: pair.first, duration: "quarter", accidental: pair.firstAccidental },
+      { kind: "note", pitch: pair.natural, duration: "quarter", accidental: "natural" },
+    ],
+    explanation: `Первая — ${firstName}; бекар (♮) отменяет альтерацию: вторая нота снова ${namedPitch(pair.natural)} — натуральная, белая клавиша.`,
+    answer: { type: "pitch", pitch: pair.natural },
+  };
+}
+
 /** Питчи для карточек длительностей/пауз: красивые позиции на стане, все в маппинге. */
 const DURATION_PITCHES = [64, 67, 71, 72, 76, 79] as const;
 
@@ -265,6 +344,35 @@ const SMALL_OCTAVE = [48, 50, 52, 53, 55, 57, 59] as const;
  * нижняя линия скрипичного.
  */
 const BOTH_CLEFS_PITCHES = [55, 59, 60, 62, 64] as const;
+
+// --- Пулы уроков альтерации (PIANO-14, уроки 10–11; скрипичный ключ) ---
+
+/**
+ * Диезы первой октавы (GLOSSARY: диез = полтона вверх): C♯4 D♯4 F♯4 G♯4 A♯4 —
+ * чёрные клавиши 1 2 4 5 6 базовой раскладки. Письменная позиция — буква
+ * питча (pitchToStaffPos: диезы схлопываются в натуральную букву).
+ */
+const SHARP_PITCHES = [61, 63, 66, 68, 70] as const;
+
+/**
+ * Бемоли первой октавы (GLOSSARY: бемоль = полтона вниз): письменные D♭4 E♭4
+ * A♭4 B♭4 — звучат 61 63 68 70, те же чёрные клавиши, что C♯4 D♯4 G♯4 A♯4
+ * (энгармонизм). Письменная позиция — буква на полтона выше (writtenPitch).
+ */
+const FLAT_PITCHES = [61, 63, 68, 70] as const;
+
+/**
+ * Пары «альтерация → бекар» урока 11: первая нота со ♯ или ♭, вторая — ♮ той
+ * же письменной буквы. Натуры — белые клавиши; обе пары от 61 (C♯4→C4 и
+ * D♭4→D4) показывают энгармонизм: одно звучание — разные буквы.
+ */
+const NATURAL_PAIRS: readonly NaturalPair[] = [
+  { first: 66, firstAccidental: "sharp", natural: 65 }, // F♯4 → F♮4
+  { first: 61, firstAccidental: "sharp", natural: 60 }, // C♯4 → C♮4
+  { first: 70, firstAccidental: "sharp", natural: 69 }, // A♯4 → A♮4
+  { first: 61, firstAccidental: "flat", natural: 62 }, // D♭4 → D♮4 (письмо D)
+  { first: 68, firstAccidental: "flat", natural: 69 }, // A♭4 (звучит 68) → A♮4 (69)
+];
 
 // --- Факты (обучающие карточки без ответа, «Далее») ---
 
@@ -479,6 +587,61 @@ function lesson9Facts(): PrimerCard[] {
   ];
 }
 
+// --- Факты уроков альтерации (PIANO-14) ---
+
+function lesson10Facts(): PrimerCard[] {
+  const scale: StaffItem[] = SHARP_PITCHES.map((pitch) => ({
+    kind: "note",
+    pitch,
+    duration: "quarter",
+    accidental: "sharp",
+  }));
+  return [
+    {
+      prompt: "Диез: полтона вверх",
+      staff: [{ kind: "note", pitch: 61, duration: "quarter", accidental: "sharp", highlight: true }],
+      explanation:
+        "Диез (♯) — знак слева от ноты: поднимает её на полтона. C♯4 звучит между C4 и D4 — чёрной клавишей. Знак стоит у линии или промежутка самой буквы: у C♯4 — там же, где жила бы C4.",
+      answer: null,
+    },
+    {
+      prompt: "Все диезы первой октавы — чёрные клавиши",
+      staff: scale,
+      explanation: `Диезов пять: ${SHARP_PITCHES.map(namedPitch).join(" ")} — все играются чёрными клавишами (в базовой раскладке — ряд 1 2 4 5 6). Письменная буква не меняется: меняется только звучание.`,
+      answer: null,
+    },
+  ];
+}
+
+function lesson11Facts(): PrimerCard[] {
+  return [
+    {
+      prompt: "Бемоль: полтона вниз",
+      staff: [{ kind: "note", pitch: 70, duration: "quarter", accidental: "flat", highlight: true }],
+      explanation:
+        "Бемоль (♭) — знак слева от ноты: опускает её на полтона. B♭4 (си-бемоль) звучит как A♯4 (ля♯) — чёрной клавишей. Знак стоит у письменной буквы (B4 — средняя линия), звучание — на полтона ниже.",
+      answer: null,
+    },
+    {
+      prompt: "Энгармонизм: одна клавиша — два имени",
+      staff: [
+        { kind: "note", pitch: 61, duration: "quarter", accidental: "sharp" },
+        { kind: "note", pitch: 61, duration: "quarter", accidental: "flat" },
+      ],
+      explanation:
+        "Одна чёрная клавиша между C4 и D4 — два письменных имени: C♯4 (диез у буквы C) и D♭4 (бемоль у буквы D). Звучание одно и то же. Это энгармонизм.",
+      answer: null,
+    },
+    {
+      prompt: "Бекар: отмена альтерации",
+      staff: [{ kind: "note", pitch: 65, duration: "quarter", accidental: "natural", highlight: true }],
+      explanation:
+        "Бекар (♮) отменяет диез или бемоль: нота снова натуральная. Здесь это F4 (фа) — белая клавиша, её обычное звучание.",
+      answer: null,
+    },
+  ];
+}
+
 // --- Генераторы уроков ---
 
 function generateLesson1(rng: Rng): PrimerCard[] {
@@ -542,6 +705,25 @@ function generateBothClefs(rng: Rng): PrimerCard[] {
     questions.push(first, second);
   });
   return [...lesson9Facts(), ...questions];
+}
+
+/** Урок 10 «Диезы»: весь пул за один заход — 3 «какая нота» + 2 «сыграй». */
+function generateSharps(rng: Rng): PrimerCard[] {
+  const picks = shuffled(rng, SHARP_PITCHES);
+  const questions = [
+    ...picks.slice(0, 3).map((pitch) => nameTheSharp(pitch)),
+    ...picks.slice(3).map((pitch) => playTheSharp(pitch)),
+  ];
+  return [...lesson10Facts(), ...questions];
+}
+
+/** Урок 11 «Бемоли и бекары»: 4 ♭-карточки + 3 пары «♯/♭ → ♮» (пул смешанный). */
+function generateFlatsAndNaturals(rng: Rng): PrimerCard[] {
+  const flats = shuffled(rng, FLAT_PITCHES).map((pitch) => nameTheFlat(pitch));
+  const pairs = shuffled(rng, NATURAL_PAIRS)
+    .slice(0, 3)
+    .map((pair) => naturalPairCard(pair));
+  return [...lesson11Facts(), ...flats, ...pairs];
 }
 
 /** Уроки (SPEC §4.9) в порядке прохождения; следующий открывается при ≥80%. */
@@ -608,5 +790,19 @@ export const LESSONS: readonly PrimerLesson[] = [
     title: "Оба ключа",
     description: "Одна нота в 𝄞 и 𝄢 — разные места на стане: имя линии даёт ключ",
     generate: generateBothClefs,
+  },
+  {
+    id: "sharps",
+    order: 10,
+    title: "Диезы",
+    description: "Знак ♯ — полтона вверх: чёрные клавиши C♯4, D♯4, F♯4, G♯4, A♯4",
+    generate: generateSharps,
+  },
+  {
+    id: "flats-naturals",
+    order: 11,
+    title: "Бемоли и бекары",
+    description: "Знак ♭ — полтона вниз: D♭4 = клавиша C♯4 (энгармонизм); бекар ♮ отменяет знак",
+    generate: generateFlatsAndNaturals,
   },
 ];
