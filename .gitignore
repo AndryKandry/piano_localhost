@@ -8,3 +8,4 @@ dist/
 .DS_Store
 .playwright-cli/
 .git-commit-msg.tmp
+tmp/design-system-piano.md

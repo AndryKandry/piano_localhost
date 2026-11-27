@@ -47,7 +47,7 @@
       <header class="primer-topbar">
         <button id="primerBack" type="button" class="btn">← Назад к пианино</button>
         <h2 class="primer-title">Азбука</h2>
-        <span class="primer-topbar-hint">⌥A — вернуться · ответ — клавишей пианино или кнопкой</span>
+        <span class="primer-topbar-hint">⌥A — вернуться · ответ — клавишей пианино</span>
       </header>
       <div id="primerFontStatus" class="primer-font-status" hidden>Шрифт нот загружается…</div>
       <div id="primerList" class="primer-list"></div>
@@ -69,6 +69,9 @@
       <!-- Нотная тетрадь (SPEC §4.10, PIANO-12): режим практики внутри азбуки.
            Канвасы — свои (по паттерну урока), рендеры те же классы. -->
       <div id="primerNotebook" class="primer-notebook" hidden>
+        <!-- Видимое имя режима (ревью UI 2026-11-27, P2): шапка раздела всегда
+             говорит только «Азбука»; название режима читается рядом. -->
+        <h3 class="primer-mode-title">Нотная тетрадь</h3>
         <div class="primer-nb-bar">
           <span class="primer-nb-label">Уровень:</span>
           <div id="primerNbLevels" class="seg" role="group" aria-label="Уровень тетради"></div>
@@ -88,16 +91,24 @@
       <!-- Музыкальный диктант (PIANO-17): режим слуха внутри азбуки.
            Стана нет — ноты видеть нельзя; статус/фидбек/итог-разбор + клавиатура. -->
       <div id="primerDictation" class="primer-dictation" hidden>
+        <!-- Видимое имя режима (ревью UI 2026-11-27, P2) — см. тетрадь. -->
+        <h3 class="primer-mode-title">Музыкальный диктант</h3>
         <div class="primer-dict-bar">
           <span class="primer-dict-label">Уровень:</span>
           <div id="primerDictLevels" class="seg" role="group" aria-label="Уровень диктанта"></div>
           <button id="primerDictNew" type="button" class="btn">Новый диктант</button>
           <button id="primerDictListen" type="button" class="btn">Прослушать ещё раз</button>
-          <button id="primerDictCheck" type="button" class="btn primary">Проверить</button>
+          <!-- primary ведёт syncButtons (dictation-screen.ts): ввод — «Проверить»,
+               результат — «Новый диктант»; disabled primary не остаётся. -->
+          <button id="primerDictCheck" type="button" class="btn">Проверить</button>
           <button id="primerDictBack" type="button" class="btn">К списку уроков</button>
         </div>
         <p id="primerDictStatus" class="primer-score"></p>
         <p id="primerDictFeedback" class="primer-feedback"></p>
+        <!-- Ряд позиций ввода (ревью UI 2026-11-27, P1): 2–5 ячеек по числу
+             нот; имена нот не показывает — ответ не раскрывается. aria-hidden:
+             счёт («введено 2/5») уже озвучивается статусом. -->
+        <div id="primerDictSlots" class="primer-dict-slots" hidden aria-hidden="true"></div>
         <div id="primerDictResult" class="primer-dict-result" hidden></div>
         <!-- Клавиатура диктанта: подсветка нажатий; «жми-сейчас» нет — слух! -->
         <canvas id="primerDictKbCanvas" hidden></canvas>
@@ -107,6 +118,8 @@
            подсказка на выбор: клавиатура («жми-сейчас»), гриф (диаграмма
            «струна.лад») или нет. -->
       <div id="primerGuitarNotebook" class="primer-gnotebook" hidden>
+        <!-- Видимое имя режима (ревью UI 2026-11-27, P2) — см. тетрадь. -->
+        <h3 class="primer-mode-title">Гитарная тетрадь</h3>
         <div class="primer-gnb-bar">
           <span class="primer-gnb-label">Уровень:</span>
           <div id="primerGnbLevels" class="seg" role="group" aria-label="Уровень гитарной тетради"></div>

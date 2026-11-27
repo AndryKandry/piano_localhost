@@ -32,7 +32,9 @@ import { HIGHLIGHT_NEXT_COLOR } from "./colors";
 const COLORS = {
   background: "#141821", // --panel: подложка диаграммы (design-system §2.2)
   string: "#e9e7e2", // notation-ink: струны и нут (design-system §2.2, 14.4:1 на panel)
-  fret: "#2a3244", // --border: порожки — контур диаграммы (design-system §2.1)
+  // guide-line: порожки — значимая графика (по ним считают лады), 3.08:1 на
+  // panel; --border давал 1.39:1 (ревью UI 2026-11-27, P1)
+  fret: "#5a6680",
   label: "#8a91a0", // notation-label: буквы открытых струн (design-system §2.2, 5.6:1)
   onAccent: "#141821", // --on-accent: цифра лада на янтарном кружке (design-system §2.1)
 } as const;
@@ -121,11 +123,6 @@ export function fingerCircleX(geo: FretboardGeometry, fret: number): number {
 export interface FretboardRenderOptions {
   /** Нота-подсказка: кружок-палец на (струна, лад) с цифрой лада. Не задана/null — чистый гриф. */
   highlight?: GuitarNote | null;
-  /**
-   * Приглушение подсказки (после ответа): alpha 0.6 на всей диаграмме —
-   * как dim нотации (src/notation/renderer.ts applyInk).
-   */
-  dim?: boolean;
 }
 
 export class FretboardRenderer {
@@ -164,16 +161,19 @@ export class FretboardRenderer {
     return true;
   }
 
-  /** Нарисовать диаграмму грифа на текущем CSS-размере (см. FretboardRenderOptions). */
+  /**
+   * Нарисовать диаграмму грифа на текущем CSS-размере (см.
+   * FretboardRenderOptions). Структура (струны, порожки, нут, буквы) рисуется
+   * всегда в полную силу: приглушать её не нужно — до ответа скрыт сам
+   * ответ (кружок), а alpha 0.6 ронял буквы струн до 2.84:1 и порожки
+   * до 1.9:1 (ревью UI 2026-11-27, P1).
+   */
   render(opts: FretboardRenderOptions = {}): void {
     const geo = layoutFretboard(this.cssWidth, this.cssHeight);
     const { ctx } = this;
 
     ctx.fillStyle = COLORS.background;
     ctx.fillRect(0, 0, geo.width, geo.height);
-
-    ctx.save();
-    if (opts.dim === true) ctx.globalAlpha = 0.6;
 
     // Струны: от нута вправо, толщина растёт к басу.
     ctx.fillStyle = COLORS.string;
@@ -217,7 +217,5 @@ export class FretboardRenderer {
       ctx.textBaseline = "middle";
       ctx.fillText(fretLabel(note.fret), cx, cy);
     }
-
-    ctx.restore();
   }
 }

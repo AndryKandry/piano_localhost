@@ -9,7 +9,8 @@
  * Диктант (GLOSSARY): Азбука играет последовательность, игрок повторяет
  * нажатиями клавиш, проверка — по заполнении ввода или кнопкой «Проверить».
  * Стана на экране нет — нот видеть нельзя, проверяется слух; середина экрана
- * — статус, фидбек и итог-панель с разбором позиций. Клавиатура пианино
+ * — статус, ряд позиций ввода (2–5 ячеек по числу нот, без имён нот), фидбек
+ * и итог-панель с разбором позиций. Клавиатура пианино
  * снизу — по паттерну клавиатуры карточек/тетради (deps.mapping/pressedPitches
  * снаружи), pressed подсвечивается; подсветки «жми-сейчас» НЕТ — она
  * подсказывала бы ответ (next всегда пуст).
@@ -100,6 +101,7 @@ export function initDictationScreen(deps: DictationScreenDeps): DictationScreenA
   const levelsEl = requireEl<HTMLElement>("primerDictLevels");
   const statusEl = requireEl<HTMLElement>("primerDictStatus");
   const feedbackEl = requireEl<HTMLElement>("primerDictFeedback");
+  const slotsEl = requireEl<HTMLElement>("primerDictSlots");
   const resultEl = requireEl<HTMLElement>("primerDictResult");
   const newBtn = requireEl<HTMLButtonElement>("primerDictNew");
   const listenBtn = requireEl<HTMLButtonElement>("primerDictListen");
@@ -132,6 +134,7 @@ export function initDictationScreen(deps: DictationScreenDeps): DictationScreenA
 
   const levelButtons = DICTATION_LEVELS.map((value) => {
     const button = gameButton(String(value), () => switchLevel(value), "btn primer-dict-level");
+    button.setAttribute("aria-pressed", "false"); // выбранность ведёт syncLevelButtons (DS §3.2)
     levelsEl.appendChild(button);
     return button;
   });
@@ -178,6 +181,7 @@ export function initDictationScreen(deps: DictationScreenDeps): DictationScreenA
     listenUntil = null;
     syncLevelButtons();
     syncButtons();
+    buildSlots(); // ряд позиций ввода — под длину нового диктанта (2–5)
     resultEl.hidden = true;
     setFeedback(null);
     // Слушать первый раз — сразу же, без «прослушать» руками.
@@ -187,13 +191,26 @@ export function initDictationScreen(deps: DictationScreenDeps): DictationScreenA
   }
 
   function syncLevelButtons(): void {
-    levelButtons.forEach((button, i) => button.classList.toggle("active", (DICTATION_LEVELS[i] ?? 0) === level));
+    // Выбранный уровень ровно один: .active + aria-pressed (DS §3.2, как
+    // ui/controls.ts syncSeg — ревью UI 2026-11-27, P2)
+    levelButtons.forEach((button, i) => {
+      const active = (DICTATION_LEVELS[i] ?? 0) === level;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
   }
 
-  /** Доступность кнопок по фазе: проверка — только на вводе, реплики — до проверки. */
+  /**
+   * Доступность и primary по фазе (ревью UI 2026-11-27, P1): главное действие
+   * экрана — «Проверить» на вводе, «Новый диктант» на результате; disabled
+   * primary не остаётся. В фазе «слушай» primary нет — действовать ещё рано.
+   */
   function syncButtons(): void {
-    checkBtn.disabled = judge.currentPhase !== "input";
-    listenBtn.disabled = judge.currentPhase === "result";
+    const phase = judge.currentPhase;
+    checkBtn.disabled = phase !== "input";
+    listenBtn.disabled = phase === "result";
+    checkBtn.classList.toggle("primary", phase === "input");
+    newBtn.classList.toggle("primary", phase === "result");
   }
 
   /**
@@ -229,6 +246,7 @@ export function initDictationScreen(deps: DictationScreenDeps): DictationScreenA
     judge.beginInput();
     setFeedback(null);
     syncButtons();
+    syncSlots(); // открылся ввод — появилась текущая позиция
     updateStatus();
   }
 
@@ -241,6 +259,7 @@ export function initDictationScreen(deps: DictationScreenDeps): DictationScreenA
       checkDictation(); // завершение ввода — автопроверка (SPEC PIANO-17)
       return;
     }
+    syncSlots(); // ряд позиций обновляется мгновенно, по событию ввода (§4)
     updateStatus();
     updateKeyboard();
   }
@@ -261,6 +280,7 @@ export function initDictationScreen(deps: DictationScreenDeps): DictationScreenA
     showVerdict(check);
     updateStatus();
     syncButtons();
+    syncSlots(); // фаза result — маркер текущей позиции снимается
     updateKeyboard(); // фаза result — клавиатура прячется
   }
 
@@ -293,6 +313,35 @@ export function initDictationScreen(deps: DictationScreenDeps): DictationScreenA
         ? "позиция не заполнена"
         : `ты сыграл ${pitchName(wrong.playedPitch)} (${pitchNameRuStep(wrong.playedPitch)})`;
     return `Верно ${check.correctCount}/${check.total}. Позиция ${wrong.position + 1}: ${played} — было ${expected}`;
+  }
+
+  // --- Ряд позиций ввода (ревью UI 2026-11-27, P1) ---
+
+  /**
+   * Ячейки позиций (2–5 по числу нот) — рабочая середина экрана: фокус и
+   * память о длине последовательности. Имён нот нет — ответ не раскрывается;
+   * виден только объём ввода. aria-hidden в разметке: счёт («введено 2/5»)
+   * уже озвучивается статусом.
+   */
+  let slotEls: HTMLElement[] = [];
+
+  function buildSlots(): void {
+    const nodes: HTMLElement[] = [];
+    for (let i = 0; i < judge.noteCount; i += 1) nodes.push(el("span", "primer-dict-slot", String(i + 1)));
+    slotEls = nodes;
+    slotsEl.replaceChildren(...nodes);
+    slotsEl.hidden = judge.noteCount === 0;
+    syncSlots();
+  }
+
+  /** Состояния ячеек — мгновенно, по событию (§4): введена / текущая / пустая. */
+  function syncSlots(): void {
+    const entered = judge.enteredCount;
+    for (let i = 0; i < slotEls.length; i += 1) {
+      const node = slotEls[i] as HTMLElement;
+      node.classList.toggle("filled", i < entered);
+      node.classList.toggle("current", judge.currentPhase === "input" && i === entered);
+    }
   }
 
   // --- Статус и фидбек ---

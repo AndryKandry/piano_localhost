@@ -515,6 +515,7 @@ select {
   margin-top: 8px;
   font-size: 11px;
   color: var(--muted);
+  font-variant-numeric: tabular-nums; /* живой процент загрузки не прыгает (§2.4) */
 }
 .sample-status.loading {
   color: var(--accent);
@@ -826,6 +827,15 @@ body.primer-open #hint {
   font-weight: 600; /* вес заголовка явно — не UA-bold (§2.4) */
   color: var(--text);
 }
+/* Видимое имя активного режима (ревью UI 2026-11-27, P2): шапка раздела
+   всегда говорит только «Азбука»; тетради/диктант называют себя сами —
+   --fs-xl/600, как заголовок урока (§2.4, §3.13). */
+.primer-mode-title {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  color: var(--text);
+}
 .primer-topbar-hint {
   margin-left: auto;
   font-size: 11px;
@@ -841,14 +851,30 @@ body.primer-open #hint {
   color: var(--error);
 }
 
-/* Список уроков — карточки в стиле библиотеки (.mel-card) */
+/* Список уроков — карточки в стиле библиотеки (.mel-card). На desktop — две
+   содержательные колонки (ревью UI 2026-11-27, P2): «Нотная грамота» слева,
+   «Гитара» справа — 15 карточек одним столбцом уводили гитарную тетрадь за
+   первый экран. Это НЕ KPI-сетка: те же карточки, рамки и gap. */
 .primer-list {
   width: min(1140px, 100%);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-2);
+}
+@media (min-width: 900px) {
+  .primer-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+/* Колонка списка: те же карточки, тот же gap --sp-2; min-width: 0 — длинные
+   строки мета не распирают колонку изнутри. */
+.primer-list-col {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
+  min-width: 0;
 }
-/* display:flex перебивает UA-правило [hidden] — на экране урока список
+/* display:grid перебивает UA-правило [hidden] — на экране урока список
    иначе остаётся видимым и съедает высоту у карточек (баг вёрстки). */
 .primer-list[hidden] {
   display: none;
@@ -1010,6 +1036,11 @@ body.primer-open #hint {
   justify-content: center;
   gap: 8px;
   min-height: 30px;
+  /* Безопасный зазор снизу (ревью UI 2026-11-27, P2): на фактах/выборе
+     навигация — последний элемент колонки вплотную к краю окна, focus-ring
+     (2px + offset 1) обрезался. Освободившиеся 4px забирает стан (flex-shrink)
+     — клавиатуры тетрадей это не двигает. */
+  padding-bottom: var(--sp-1);
 }
 
 /* --- Нотная тетрадь (SPEC §4.10, PIANO-12): режим практики внутри азбуки ---
@@ -1163,6 +1194,47 @@ body.primer-open #hint {
    экран обязан влезать при низкой высоте окна (как у тетради). */
 .primer-dictation .primer-feedback {
   min-height: 1.4em;
+}
+
+/* Ряд позиций ввода (ревью UI 2026-11-27, P1): 2–5 ячеек по числу нот —
+   рабочий центр фаз «слушай»/«ввод» вместо пустой сцены. Состояния по §3.1:
+   пустая — панель + рамка; введённая — тонировка --accent-soft (состояние
+   «записано»); текущая — контур --accent. Имён нот нет — ответ не
+   раскрывается. Смена мгновенная, по событию ввода (§4). */
+.primer-dict-slots {
+  /* Центр свободной зоны (между статусом и клавиатурой) — фокус диктанта
+     в середине сцены, а не у верхнего края (ревью Kimi P1-2). */
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-content: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  font-variant-numeric: tabular-nums; /* номера позиций не прыгают (§2.4) */
+}
+.primer-dict-slots[hidden] {
+  display: none;
+}
+.primer-dict-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 36px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: var(--fs-xs);
+  color: var(--muted); /* 5.78:1 на --panel (§2.3) */
+}
+.primer-dict-slot.filled {
+  background: var(--accent-soft);
+  color: var(--accent); /* 8.5:1 на accent-soft (§2.3) */
+}
+.primer-dict-slot.current {
+  border-color: var(--accent); /* контур = текущая позиция ввода (§3.1) */
+  color: var(--text);
 }
 
 /* Итог-панель с разбором позиций (по завершении диктанта) — по паттерну

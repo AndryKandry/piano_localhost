@@ -251,13 +251,17 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     guitarNotebook.close(); // из гитарной тетради — так же (PIANO-20)
     listEl.hidden = false;
     lessonEl.hidden = true;
-    listEl.replaceChildren();
+    // Две содержательные колонки на desktop (ревью UI 2026-11-27, P2):
+    // слева нотная серия с практиками, справа гитарная; на узком окне —
+    // столбец (ведёт CSS .primer-list). Стиль карточек и gap не меняются.
+    const notationCol = el("div", "primer-list-col");
+    notationCol.appendChild(el("h3", "primer-section-title", "Нотная грамота"));
     for (const lesson of LESSONS) {
-      listEl.appendChild(buildLessonCard(lesson, LESSONS));
+      notationCol.appendChild(buildLessonCard(lesson, LESSONS));
     }
-    listEl.appendChild(buildPracticeSection());
-    listEl.appendChild(buildEarSection());
-    listEl.appendChild(buildGuitarSection());
+    notationCol.appendChild(buildPracticeSection());
+    notationCol.appendChild(buildEarSection());
+    listEl.replaceChildren(notationCol, buildGuitarSection());
   }
 
   /**
@@ -780,9 +784,10 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   }
 
   /**
-   * Перерисовать диаграмму: до ответа — приглушённый общий гриф (dim); после
-   * вердикта и на фактах — кружок «струна.лад» с цифрой лада. card = null —
-   * скрыть (итог урока). Пересоздание буфера чистит канвас — рисуем всегда.
+   * Перерисовать диаграмму: до ответа — общий гриф без кружка (ответ скрыт,
+   * структура в полную силу — ревью UI 2026-11-27, P1); после вердикта и на
+   * фактах — кружок «струна.лад» с цифрой лада. card = null — скрыть (итог
+   * урока). Пересоздание буфера чистит канвас — рисуем всегда.
    */
   function updateGf(card: PrimerCard | null): void {
     const visible = card !== null && gfShouldBeVisible();
@@ -794,7 +799,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     gfRenderer.resize();
     const reveal = card.answer === null || engine.currentPhase === "feedback";
     const highlight = reveal ? fretboardHighlight(card) : null;
-    gfRenderer.render({ highlight, dim: highlight === null });
+    gfRenderer.render({ highlight });
   }
 
   // --- Клавиатура карточек (SPEC §4.9) ---

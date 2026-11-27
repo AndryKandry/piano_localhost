@@ -313,6 +313,7 @@ interface FakeEl {
   textContent: string;
   className: string;
   classList: { toggle(name: string, force?: boolean): void };
+  setAttribute(name: string, value: string): void;
   addEventListener(type: string, handler: () => void): void;
   appendChild(child: FakeEl): void;
   replaceChildren(...children: unknown[]): void;
@@ -327,6 +328,7 @@ function makeEl(isCanvas: boolean): FakeEl {
     textContent: "",
     className: "",
     classList: { toggle: () => {} },
+    setAttribute: () => {}, // aria-pressed сегментов (DS §3.2) в стабе не проверяется
     addEventListener: (type: string, handler: () => void) => {
       if (type === "click") element.clicks.push(handler);
     },
@@ -395,6 +397,7 @@ function makeScreen(mock: PlaybackMock): ScreenHarness {
     "primerDictLevels",
     "primerDictStatus",
     "primerDictFeedback",
+    "primerDictSlots",
     "primerDictResult",
     "primerDictNew",
     "primerDictListen",

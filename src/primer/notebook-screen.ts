@@ -126,6 +126,7 @@ export function initNotebookScreen(deps: NotebookScreenDeps): NotebookScreenApi 
 
   const levelButtons = NOTEBOOK_LEVELS.map((value) => {
     const button = gameButton(String(value), () => switchLevel(value), "btn primer-nb-level");
+    button.setAttribute("aria-pressed", "false"); // выбранность ведёт syncLevelButtons (DS §3.2)
     levelsEl.appendChild(button);
     return button;
   });
@@ -167,6 +168,7 @@ export function initNotebookScreen(deps: NotebookScreenDeps): NotebookScreenApi 
     judge.start(sheet);
     phase = "playing";
     syncLevelButtons();
+    syncPrimary();
     resultEl.hidden = true;
     setFeedback(null);
     drawSheet();
@@ -175,7 +177,13 @@ export function initNotebookScreen(deps: NotebookScreenDeps): NotebookScreenApi 
   }
 
   function syncLevelButtons(): void {
-    levelButtons.forEach((button, i) => button.classList.toggle("active", (NOTEBOOK_LEVELS[i] ?? 0) === level));
+    // Выбранный уровень ровно один: .active + aria-pressed (DS §3.2, как
+    // ui/controls.ts syncSeg — ревью UI 2026-11-27, P2)
+    levelButtons.forEach((button, i) => {
+      const active = (NOTEBOOK_LEVELS[i] ?? 0) === level;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
   }
 
   function handlePitch(pitch: number): void {
@@ -203,6 +211,7 @@ export function initNotebookScreen(deps: NotebookScreenDeps): NotebookScreenApi 
   function finishSheet(): void {
     const result = judge.result();
     phase = "finished";
+    syncPrimary(); // на результате primary — «Новая тетрадь» (ревью UI 2026-11-27, P1)
     if (!result) return;
     const key = notebookProgressKey(result.level);
     const best = Math.max(progress.bestPercent(key), result.firstTryPercent);
@@ -230,6 +239,15 @@ export function initNotebookScreen(deps: NotebookScreenDeps): NotebookScreenApi 
   }
 
   // --- Статус и фидбек ---
+
+  /**
+   * Primary топбара по фазе (ревью UI 2026-11-27, P1): на результате главное
+   * действие — «Новая тетрадь»; во время чтения primary нет (ответ — клавиша
+   * роя, не кнопка). Primary на экране одна (DS §3.1).
+   */
+  function syncPrimary(): void {
+    newBtn.classList.toggle("primary", phase === "finished");
+  }
 
   function updateStatus(): void {
     const total = judge.totalCount;

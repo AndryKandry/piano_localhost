@@ -62,7 +62,7 @@ export function initSidePanel(deps: PanelsDeps): PanelsApi {
   primerSection.appendChild(el("h3", "panel-heading", "Азбука"));
   const primerBtn = gameButton("Открыть азбуку (⌥A)", () => deps.onOpenPrimer());
   primerBtn.classList.add("wide");
-  primerSection.append(primerBtn, el("p", "panel-hint", "Уроки нотной грамоты: нотный стан, скрипичный ключ, ноты, длительности, паузы, такты."));
+  primerSection.append(primerBtn, el("p", "panel-hint", "Уроки нотной грамоты и гитары, нотные тетради, музыкальный диктант."));
 
   // --- Секция «Библиотека» ---
   const librarySection = el("section", "panel-section");

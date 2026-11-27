@@ -140,6 +140,7 @@ export function initGuitarNotebookScreen(deps: GuitarNotebookScreenDeps): Guitar
 
   const levelButtons = GUITAR_NOTEBOOK_LEVELS.map((value) => {
     const button = gameButton(String(value), () => switchLevel(value), "btn primer-gnb-level");
+    button.setAttribute("aria-pressed", "false"); // выбранность ведёт syncLevelButtons (DS §3.2)
     levelsEl.appendChild(button);
     return button;
   });
@@ -150,6 +151,7 @@ export function initGuitarNotebookScreen(deps: GuitarNotebookScreenDeps): Guitar
   };
   const hintButtons = GUITAR_HINT_MODES.map((mode) => {
     const button = gameButton(HINT_LABELS[mode], () => switchHint(mode), "btn primer-gnb-hint");
+    button.setAttribute("aria-pressed", "false"); // выбранность ведёт syncHintButtons (DS §3.2)
     hintsEl.appendChild(button);
     return button;
   });
@@ -204,8 +206,14 @@ export function initGuitarNotebookScreen(deps: GuitarNotebookScreenDeps): Guitar
   }
 
   function syncHintButtons(): void {
+    // Выбранная подсказка ровно одна: .active + aria-pressed (DS §3.2, как
+    // ui/controls.ts syncSeg — ревью UI 2026-11-27, P2)
     const mode = settings.get().guitarNotebookHint;
-    hintButtons.forEach((button, i) => button.classList.toggle("active", GUITAR_HINT_MODES[i] === mode));
+    hintButtons.forEach((button, i) => {
+      const active = GUITAR_HINT_MODES[i] === mode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
   }
 
   function startSheet(): void {
@@ -214,6 +222,7 @@ export function initGuitarNotebookScreen(deps: GuitarNotebookScreenDeps): Guitar
     phase = "playing";
     syncLevelButtons();
     syncHintButtons();
+    syncPrimary();
     resultEl.hidden = true;
     setFeedback(null);
     drawSheet();
@@ -223,7 +232,13 @@ export function initGuitarNotebookScreen(deps: GuitarNotebookScreenDeps): Guitar
   }
 
   function syncLevelButtons(): void {
-    levelButtons.forEach((button, i) => button.classList.toggle("active", (GUITAR_NOTEBOOK_LEVELS[i] ?? 0) === level));
+    // Выбранный уровень ровно один: .active + aria-pressed (DS §3.2, как
+    // ui/controls.ts syncSeg — ревью UI 2026-11-27, P2)
+    levelButtons.forEach((button, i) => {
+      const active = (GUITAR_NOTEBOOK_LEVELS[i] ?? 0) === level;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
   }
 
   function handlePitch(pitch: number): void {
@@ -253,6 +268,7 @@ export function initGuitarNotebookScreen(deps: GuitarNotebookScreenDeps): Guitar
   function finishSheet(): void {
     const result = judge.result();
     phase = "finished";
+    syncPrimary(); // на результате primary — «Новая тетрадь» (ревью UI 2026-11-27, P1)
     if (!result) return;
     const key = guitarNotebookProgressKey(result.level);
     const best = Math.max(progress.bestPercent(key), result.firstTryPercent);
@@ -281,6 +297,15 @@ export function initGuitarNotebookScreen(deps: GuitarNotebookScreenDeps): Guitar
   }
 
   // --- Статус и фидбек ---
+
+  /**
+   * Primary топбара по фазе (ревью UI 2026-11-27, P1): на результате главное
+   * действие — «Новая тетрадь»; во время чтения primary нет (ответ — клавиша
+   * роя, не кнопка). Primary на экране одна (DS §3.1).
+   */
+  function syncPrimary(): void {
+    newBtn.classList.toggle("primary", phase === "finished");
+  }
 
   function updateStatus(): void {
     const total = judge.totalCount;
