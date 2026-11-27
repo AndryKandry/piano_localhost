@@ -1,8 +1,10 @@
 /**
  * Smoke-проверка геометрии нотного стана модуля «Азбука» (ADR-007) — чистая
- * математика src/notation/geometry.ts: позиции нот, y-координаты и roundtrip
- * кликов, направление и длина штиля, добавочные линейки, позиции пауз и
- * размера, раскладка такта. Запуск: npm run smoke:notation.
+ * математика src/notation/geometry.ts: позиции нот (скрипичный и басовый
+ * ключ, PIANO-13), y-координаты и roundtrip кликов, направление и длина
+ * штиля, добавочные линейки, позиции пауз и размера, раскладка такта,
+ * знаки альтерации: кодпоинты ♯♭♮ и письменная позиция ♭ (PIANO-14).
+ * Запуск: npm run smoke:notation.
  *
  * САМ РЕНДЕР (renderer.ts: глифы Bravura, штили, подсветка) в node НЕ
  * проверяется — нужен живой браузер и загруженный шрифт; визуальная выверка
@@ -10,11 +12,14 @@
  * проверяются только соотношения, кодпоинты и чистые функции.
  */
 import {
+  ACCIDENTAL_CODEPOINTS,
   BEAM_SPACING_SPACES,
   BEAM_THICKNESS_SPACES,
   BOTTOM_LINE_POS,
   CLEF_BASELINE_POS,
+  CLEF_CODEPOINTS,
   DURATION_BEATS,
+  F_CLEF_BASELINE_POS,
   FLAG_CODEPOINTS,
   LEDGER_EXTENSION_SPACES,
   LEDGER_THICKNESS_SPACES,
@@ -29,6 +34,7 @@ import {
   TOP_LINE_POS,
   ledgerPositions,
   layoutMeasure,
+  ledgerLineYs,
   pitchToStaffPos,
   pitchToY,
   restBaselinePos,
@@ -36,6 +42,7 @@ import {
   stemDirection,
   stemLengthPx,
   stemTipY,
+  writtenPitch,
   yToPitch,
   type StaffDuration,
 } from "../src/notation/geometry";
@@ -65,7 +72,7 @@ function testStaffPositions(): void {
   assertEqual(pitchToStaffPos(83), 11, "B5 — промежуток над первой добавочной сверху");
   assertEqual(pitchToStaffPos(84), 12, "C6 — вторая добавочная сверху");
   assertEqual(pitchToStaffPos(69), 3, "A4 — промежуток");
-  assertEqual(pitchToStaffPos(61), -2, "C#4 стоит на позиции своей буквы C4 (альтераций в v1 нет)");
+  assertEqual(pitchToStaffPos(61), -2, "C#4 стоит на позиции своей буквы C4 (письмо диеза)");
 
   // Обратное соответствие линий и натуральных нот.
   assertEqual(staffPosToPitch(0), 64, "позиция 0 → E4");
@@ -232,6 +239,128 @@ function testMeasureLayout(): void {
   console.log("  OK: равные и пропорциональные слоты, сумма = ширина такта");
 }
 
+// --- 8. Басовый ключ (PIANO-13): посадка fClef, позиции и штили басового стана ---
+
+function testBassClef(): void {
+  console.log("Басовый ключ:");
+  // Кодпоинты и посадка: baseline басового ключа = четвёртая линия (F3),
+  // по SMuFL — baseline глифа = referenced pitch (обе точки fClef охватывают её).
+  assertEqual(CLEF_CODEPOINTS.treble, 0xe050, "скрипичный ключ U+E050 (в cmap Bravura)");
+  assertEqual(CLEF_CODEPOINTS.bass, 0xe062, "басовый ключ fClef U+E062 (в cmap Bravura)");
+  assertEqual(CLEF_BASELINE_POS, 2, "скрипичный ключ — на второй линии (G4)");
+  assertEqual(F_CLEF_BASELINE_POS, 6, "басовый ключ — на четвёртой линии (F3)");
+  assertEqual(staffPosToPitch(F_CLEF_BASELINE_POS, "bass"), 53, "baseline басового ключа резолвится в F3");
+  assertEqual(staffPosToPitch(CLEF_BASELINE_POS), 67, "baseline скрипичного ключа резолвится в G4");
+
+  // Позиции басового стана: линии G2 B2 D3 F3 A3, промежутки A2 C3 E3 G3.
+  assertEqual(pitchToStaffPos(43, "bass"), 0, "G2 — нижняя линия басового стана");
+  assertEqual(pitchToStaffPos(47, "bass"), 2, "B2 — вторая линия");
+  assertEqual(pitchToStaffPos(48, "bass"), 3, "C3 — второй промежуток");
+  assertEqual(pitchToStaffPos(50, "bass"), 4, "D3 — средняя линия");
+  assertEqual(pitchToStaffPos(52, "bass"), 5, "E3 — третий промежуток");
+  assertEqual(pitchToStaffPos(53, "bass"), 6, "F3 — четвёртая линия (линия ключа)");
+  assertEqual(pitchToStaffPos(55, "bass"), 7, "G3 — четвёртый промежуток");
+  assertEqual(pitchToStaffPos(57, "bass"), 8, "A3 — верхняя линия");
+  assertEqual(pitchToStaffPos(59, "bass"), 9, "B3 — промежуток над станом");
+  assertEqual(pitchToStaffPos(60, "bass"), 10, "C4 — первая добавочная сверху («средняя до»)");
+
+  // Дефолт treble не изменился: те же вызовы без clef дают прежние позиции.
+  assertEqual(pitchToStaffPos(53), -6, "без clef F3 — далеко под скрипичным станом");
+  assertEqual(pitchToStaffPos(48), -9, "без clef C3 — под скрипичным станом");
+  assertEqual(staffPosToPitch(0), 64, "staffPosToPitch без clef — скрипичный (E4)");
+  assertEqual(staffPosToPitch(0, "bass"), 43, "staffPosToPitch bass: позиция 0 → G2");
+
+  // y-координаты: те же пять линий стана, другие ноты на них.
+  const staffTop = 40;
+  const ss = 12;
+  const staffH = 4 * ss;
+  assertApprox(pitchToY(57, staffTop, ss, "bass"), staffTop, "A3 — верхняя линия = staffTop");
+  assertApprox(pitchToY(53, staffTop, ss, "bass"), staffTop + ss, "F3 — четвёртая линия");
+  assertApprox(pitchToY(48, staffTop, ss, "bass"), staffTop + 2.5 * ss, "C3 — второй промежуток");
+  assertApprox(pitchToY(43, staffTop, ss, "bass"), staffTop + staffH, "G2 — нижняя линия");
+  assertApprox(pitchToY(59, staffTop, ss, "bass"), staffTop - 0.5 * ss, "B3 — промежуток над станом");
+  assertApprox(pitchToY(60, staffTop, ss, "bass"), staffTop - ss, "C4 — межлинейное выше верхней линии");
+
+  // Roundtrip басовых натуральных G2..E4: клик по y возвращает питч.
+  const bassNaturals: number[] = [];
+  for (let octave = 2; octave <= 4; octave += 1) {
+    for (const semitone of [0, 2, 4, 5, 7, 9, 11]) bassNaturals.push((octave + 1) * 12 + semitone);
+  }
+  for (const pitch of bassNaturals) {
+    const y = pitchToY(pitch, staffTop, ss, "bass");
+    assertEqual(yToPitch(y, staffTop, ss, "bass"), pitch, `roundtrip y↔pitch (bass) для MIDI ${pitch}`);
+  }
+
+  // Добавочные линейки басового стана: B3 — без линеек, C4 — одна, D4 — обрамлена.
+  assertEqual(ledgerPositions(9).length, 0, "B3 (bass) — промежуток над станом, без линеек");
+  assertEqual(ledgerPositions(10).join(","), "10", "C4 (bass) — одна линейка через головку");
+  assertEqual(ledgerPositions(11).join(","), "10,12", "D4 (bass) — обрамлена линейками C4 и E4");
+  const ledgersC4Bass = ledgerLineYs(60, staffTop, ss, "bass");
+  assertEqual(ledgersC4Bass.length, 1, "C4 в басовом — одна добавочная линейка");
+  assertApprox(ledgersC4Bass[0] ?? NaN, staffTop - ss, "линейка C4 (bass) — на межлинейное выше верхней линии");
+  assertEqual(ledgerLineYs(59, staffTop, ss, "bass").length, 0, "B3 (bass) — без линеек");
+
+  // Штили по правилу средней линии басового стана (средняя линия = D3).
+  assertEqual(stemDirection(48, "bass"), "up", "C3 (ниже средней) — штиль вверх");
+  assertEqual(stemDirection(50, "bass"), "down", "D3 (средняя линия басового) — вниз");
+  assertEqual(stemDirection(57, "bass"), "down", "A3 — вниз");
+  assertEqual(stemDirection(64, "bass"), "down", "E4 над басовым станом — вниз");
+  assertEqual(stemDirection(48), "up", "без clef штиль C3 — как раньше (вверх, treble)");
+  assertApprox(
+    stemTipY(43, staffTop, ss, "bass"),
+    pitchToY(43, staffTop, ss, "bass") - 42,
+    "кончик штиля G2 (bass) — выше головки",
+  );
+  console.log("  OK: fClef E062 на F3, линии G2–A3, C3 во 2-м промежутке, штили от D3, дефолт treble сохранён");
+}
+
+// --- 9. Альтерация (PIANO-14): кодпоинты ♯♭♮, письменная позиция ♭, штиль ---
+
+function testAccidentals(): void {
+  console.log("Альтерация (PIANO-14):");
+  // Кодпоинты SMuFL: присутствие в cmap woff2 Bravura проверено разбором
+  // (sharpAccidental E262, flatAccidental E260, naturalAccidental E261).
+  assertEqual(ACCIDENTAL_CODEPOINTS.sharp, 0xe262, "диез sharpAccidental U+E262 (в cmap Bravura)");
+  assertEqual(ACCIDENTAL_CODEPOINTS.flat, 0xe260, "бемоль flatAccidental U+E260 (в cmap Bravura)");
+  assertEqual(ACCIDENTAL_CODEPOINTS.natural, 0xe261, "бекар naturalAccidental U+E261 (в cmap Bravura)");
+
+  // Письменная позиция (writtenPitch): ♭ — буква на полтона выше, ♯/♮ — своя.
+  assertEqual(writtenPitch(61, "sharp"), 61, "C♯4 (61) пишется на своей букве C4");
+  assertEqual(writtenPitch(61, "natural"), 61, "бекар не меняет письменную букву");
+  assertEqual(writtenPitch(61, null), 61, "null — нота без знака, без изменений");
+  assertEqual(writtenPitch(61, undefined), 61, "undefined — нота без знака, без изменений");
+  assertEqual(writtenPitch(61, "flat"), 62, "D♭4 (61) пишется на D4 (62) — буква на полтона выше");
+
+  // Позиции урока 11 (скрипичный): ♭ поднимает письменную позицию на один шаг.
+  assertEqual(pitchToStaffPos(writtenPitch(61, "flat")), -1, "D♭4 — позиция D4 (промежуток под станом)");
+  assertEqual(pitchToStaffPos(writtenPitch(63, "flat")), 0, "E♭4 — позиция E4 (нижняя линия)");
+  assertEqual(pitchToStaffPos(writtenPitch(68, "flat")), 3, "A♭4 — позиция A4 (третий промежуток)");
+  assertEqual(pitchToStaffPos(writtenPitch(70, "flat")), 4, "B♭4 — позиция B4 (средняя линия)");
+  // Диез остаётся на букве питча (пул урока 10).
+  assertEqual(pitchToStaffPos(writtenPitch(66, "sharp")), 1, "F♯4 — позиция F4 (первый промежуток)");
+
+  // Штиль — по письменной позиции: B♭4 на средней линии — вниз, хотя без
+  // поправки 70 (A♯4) был бы вверх. Рисование знака слева от головки
+  // (renderer.drawNote, opts.accidental) — живой браузер и шрифт (research 05 §8).
+  assertEqual(stemDirection(writtenPitch(70, "flat")), "down", "B♭4 на средней линии — штиль вниз (по букве B4)");
+  assertEqual(stemDirection(70), "up", "без письменной поправки 70 — вверх (контраст)");
+  assertEqual(stemDirection(writtenPitch(61, "sharp")), "up", "C♯4 на добавочной снизу — штиль вверх");
+
+  // Пары урока 11 «♯/♭ → ♮»: обе ноты на одной письменной позиции.
+  const pair = { flatFirst: 61, flatNatural: 62, sharpFirst: 66, sharpNatural: 65 };
+  assertEqual(
+    pitchToStaffPos(writtenPitch(pair.flatFirst, "flat")),
+    pitchToStaffPos(writtenPitch(pair.flatNatural, "natural")),
+    "D♭4 → D♮4: одна письменная позиция (D4)",
+  );
+  assertEqual(
+    pitchToStaffPos(writtenPitch(pair.sharpFirst, "sharp")),
+    pitchToStaffPos(writtenPitch(pair.sharpNatural, "natural")),
+    "F♯4 → F♮4: одна письменная позиция (F4)",
+  );
+  console.log("  OK: кодпоинты E262/E260/E261, ♭ пишется буквой выше, штиль по букве, пары ♮ на месте ♯/♭");
+}
+
 function main(): void {
   testStaffPositions();
   testPitchToY();
@@ -240,6 +369,8 @@ function main(): void {
   testRestAndTimeSigPositions();
   testEngravingDefaults();
   testMeasureLayout();
+  testBassClef();
+  testAccidentals();
   console.log(`SMOKE OK: ${checks} проверок пройдено`);
 }
 

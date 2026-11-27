@@ -9,7 +9,7 @@
  * notation/geometry. Терминология — GLOSSARY «Азбука».
  */
 import type { GuitarNote } from "../core/fretboard";
-import type { StaffDuration } from "../notation/geometry";
+import type { AccidentalKind, ClefKind, StaffDuration } from "../notation/geometry";
 
 /**
  * Раздел Азбуки (GLOSSARY): «notation» — уроки по стану (звук по записанной
@@ -26,9 +26,18 @@ export type Rng = () => number;
 /** Нота с длительностью (GLOSSARY: головка ноты, штиль, длительность). */
 export interface StaffNote {
   kind: "note";
-  /** Питч, MIDI 0–127 (C4 = 60). */
+  /**
+   * Питч, MIDI 0–127 (C4 = 60) — ЗВУЧАЩАЯ высота и ответ судьи: у ♭-нот он
+   * на полтона ниже письменной буквы (D♭4 = 61 — рендер пишет её на D4 по
+   * notation/geometry writtenPitch).
+   */
   pitch: number;
   duration: StaffDuration;
+  /**
+   * Знак альтерации слева от головки (GLOSSARY: альтерация; уроки 10–11,
+   * PIANO-14). Не задан — натуральная нота, существующие карточки не меняются.
+   */
+  accidental?: AccidentalKind;
   /** Подсветить сразу (обучающие карточки-факты). */
   highlight?: boolean;
 }
@@ -97,6 +106,19 @@ export interface PrimerCard {
    * ответа клавишей.
    */
   fretboard?: GuitarNote | null;
+  /**
+   * Ключ стана карточки (GLOSSARY: басовый ключ): «bass» — басовый 𝄢,
+   * определяет места нот на стане. Не задан — скрипичный 𝄞 (дефолт,
+   * уроки 1–6 и «Гитара»).
+   */
+  clef?: ClefKind;
+  /**
+   * Знак альтерации подсветки верной ноты после вердикта (карточки «сыграй»
+   * с альтерацией, уроки 10–11): стан пуст — верная нота дорисовывается по
+   * питчу ответа, знак нужен чтобы она не выглядела натуральной. Не задан —
+   * подсветка без знака (карточки 1–9).
+   */
+  answerAccidental?: AccidentalKind;
 }
 
 // --- Урок ---
@@ -108,7 +130,7 @@ export interface PrimerCard {
  */
 export interface PrimerLesson {
   id: string;
-  /** Порядковый номер для списка (1–6). */
+  /** Порядковый номер в своей серии (нотные 1–11, гитарные Г1–Г6). */
   order: number;
   title: string;
   description: string;

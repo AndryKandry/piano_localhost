@@ -31,7 +31,15 @@
  * по паттерну тетради, подсказка «Клавиатура | Гриф | Нет».
  */
 import { ensureBravura, NotationRenderer, NOTATION_INK } from "../notation/index";
-import { THIN_BARLINE_THICKNESS_SPACES, layoutMeasure, pitchToStaffPos } from "../notation/geometry";
+import {
+  ACCIDENTAL_CODEPOINTS,
+  THIN_BARLINE_THICKNESS_SPACES,
+  layoutMeasure,
+  pitchToStaffPos,
+  writtenPitch,
+  type AccidentalKind,
+  type ClefKind,
+} from "../notation/geometry";
 import { computeKeyboardLayout, pitchName, type KeyboardLayout } from "../core/layout";
 import { KeyboardRenderer } from "../render/keyboard";
 import { FretboardRenderer } from "../render/fretboard";
@@ -329,7 +337,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   }
 
   /**
-   * Номер урока в списке и заголовке: нотные — «1»…«6», гитарные — «Г1»…«Г6»
+   * Номер урока в списке и заголовке: нотные — «1»…«11», гитарные — «Г1»…«Г6»
    * (research 06: своя последовательность, номера не смешиваются).
    */
   function lessonNumber(lesson: PrimerLesson): string {
@@ -429,20 +437,22 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
 
   /**
    * Диапазон карточки в позициях стана (notation/geometry): lowest/highest
-   * нота + подсветка вердикта (она дорисовывается отдельно). null — нот нет
-   * (итог урока, пустая карточка) — стан центрируется по умолчанию.
+   * нота + подсветка вердикта (она дорисовывается отдельно). Позиции —
+   * относительно нижней линии ключа карточки (clef). null — нот нет (итог
+   * урока, пустая карточка) — стан центрируется по умолчанию.
    */
   function cardPitchExtent(): { minPos: number; maxPos: number } | null {
     if (engine.currentPhase === "finished") return null;
     const card = engine.currentCard;
     if (!card) return null;
+    const clef = card.clef ?? "treble";
     const pitches = card.staff
       .filter((item): item is StaffNote => item.kind === "note")
-      .map((note) => note.pitch);
+      .map((note) => writtenPitch(note.pitch, note.accidental)); // ♭ пишется буквой выше
     const highlight = currentHighlightPitch();
     if (highlight !== null) pitches.push(highlight);
     if (pitches.length === 0) return null;
-    const positions = pitches.map((pitch) => pitchToStaffPos(pitch));
+    const positions = pitches.map((pitch) => pitchToStaffPos(pitch, clef));
     return {
       minPos: Math.min(...positions),
       maxPos: Math.max(...positions),
@@ -663,24 +673,31 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   // --- Рисование карточки на стане ---
 
   function drawCard(card: PrimerCard, highlightPitch: number | null): void {
-    drawStaffContent(card.staff, card.label ?? null, highlightPitch);
+    drawStaffContent(card.staff, card.label ?? null, highlightPitch, card.clef ?? "treble", card.answerAccidental);
   }
 
   function drawStaffContent(
     items: readonly StaffItem[],
     label: string | null,
     highlightPitch: number | null,
+    clef: ClefKind = "treble",
+    answerAccidental: AccidentalKind | undefined = undefined,
   ): void {
     const { width, height } = renderer.size;
     const ss = renderer.staffSpace;
     renderer.clear();
     const margin = Math.round(ss * 1.2);
-    renderer.drawStaff(margin, width - margin * 2);
-    drawItems(items, highlightPitch, margin, ss);
+    renderer.drawStaff(margin, width - margin * 2, renderer.staffTop, clef);
+    drawItems(items, highlightPitch, margin, ss, clef);
 
-    // Питч-подсветка без ноты на стане («сыграй»-карточка): показать верную ноту.
+    // Питч-подсветка без ноты на стане («сыграй»-карточка): показать верную
+    // ноту — с её знаком альтерации, если карточка задаёт его (уроки 10–11).
     if (highlightPitch !== null && !items.some((item) => item.kind === "note" && item.pitch === highlightPitch)) {
-      renderer.drawNote(highlightPitch, "quarter", width / 2, { highlight: true });
+      renderer.drawNote(highlightPitch, "quarter", width / 2, {
+        highlight: true,
+        clef,
+        accidental: answerAccidental ?? null,
+      });
     }
     if (label) {
       renderer.drawLabel(label, width / 2, height - ss * 0.7, { sizePx: Math.round(ss * 0.95), color: NOTATION_INK });
@@ -690,9 +707,16 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
   /**
    * Раскладка элементов по x. Тактовые черты делят элементы на такты — слоты
    * внутри такта считает geometry.layoutMeasure; карточка без черт распределяет
-   * ноты/паузы равномерно. Скрипичный ключ рисует drawStaff (левый край).
+   * ноты/паузы равномерно. Ключ (скрипичный или басовый) рисует drawStaff
+   * (левый край).
    */
-  function drawItems(items: readonly StaffItem[], highlightPitch: number | null, margin: number, ss: number): void {
+  function drawItems(
+    items: readonly StaffItem[],
+    highlightPitch: number | null,
+    margin: number,
+    ss: number,
+    clef: ClefKind,
+  ): void {
     const { width } = renderer.size;
     const left = margin + ss * 2.8; // место под ключ
     const right = width - margin;
@@ -708,7 +732,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     const filled = segments.filter((segment) => segment.length > 0);
 
     if (segments.length === 1) {
-      drawSegment(filled[0] ?? [], left, right, highlightPitch, false, ss, null);
+      drawSegment(filled[0] ?? [], left, right, highlightPitch, false, ss, null, clef);
       return;
     }
     const measureWidth = usable / Math.max(1, filled.length);
@@ -716,7 +740,16 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
       const segStart = left + i * measureWidth;
       const segEnd = segStart + measureWidth;
       // Черта закрывает такт: внутренние — по границе, последняя — у края стана.
-      drawSegment(segment, segStart, segEnd, highlightPitch, true, ss, segEnd - (THIN_BARLINE_THICKNESS_SPACES * ss) / 2);
+      drawSegment(
+        segment,
+        segStart,
+        segEnd,
+        highlightPitch,
+        true,
+        ss,
+        segEnd - (THIN_BARLINE_THICKNESS_SPACES * ss) / 2,
+        clef,
+      );
     });
   }
 
@@ -729,6 +762,7 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
     compact: boolean,
     ss: number,
     barlineX: number | null,
+    clef: ClefKind,
   ): void {
     const timeSig = segment.find((item) => item.kind === "timeSignature");
     const timeSigWidth = timeSig ? ss * 2.2 : 0;
@@ -746,20 +780,28 @@ export function initPrimerScreen(deps: PrimerScreenDeps): PrimerScreenApi {
           areaStart,
           areaWidth,
         );
-        notesAndRests.forEach((item, i) => drawItem(item, slots[i]?.x ?? areaStart, highlightPitch));
+        notesAndRests.forEach((item, i) => drawItem(item, slots[i]?.x ?? areaStart, highlightPitch, clef));
       } else {
         // Без тактовых черт: равномерно по всей ширине.
         const step = areaWidth / notesAndRests.length;
-        notesAndRests.forEach((item, i) => drawItem(item, areaStart + step * (i + 0.5), highlightPitch));
+        notesAndRests.forEach((item, i) => drawItem(item, areaStart + step * (i + 0.5), highlightPitch, clef));
       }
     }
     if (barlineX !== null) renderer.drawBarline(barlineX);
   }
 
-  function drawItem(item: StaffItem, x: number, highlightPitch: number | null): void {
+  function drawItem(item: StaffItem, x: number, highlightPitch: number | null, clef: ClefKind): void {
     if (item.kind === "note") {
       const highlight = item.highlight === true || item.pitch === highlightPitch;
-      renderer.drawNote(item.pitch, item.duration, x, { highlight });
+      const acc = item.accidental ?? null;
+      let noteX = x;
+      if (acc !== null) {
+        // Знаку нужно место слева в слоте: головка смещается на полширины
+        // знака (layoutMeasure не знает про знаки — сдвиг только в слоте).
+        const accW = renderer.glyphWidth(ACCIDENTAL_CODEPOINTS[acc]);
+        noteX = x + accW / 2;
+      }
+      renderer.drawNote(item.pitch, item.duration, noteX, { highlight, clef, accidental: acc });
     } else if (item.kind === "rest") {
       renderer.drawRest(item.duration, x, { highlight: item.highlight === true });
     }

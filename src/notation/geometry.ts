@@ -5,10 +5,12 @@
  *
  * Единицы. Позиция на стане — половина межлинейного расстояния: чётные
  * позиции — линии (0 — нижняя, 4 — средняя, 8 — верхняя), нечётные —
- * промежутки. Скрипичный ключ: E4 (MIDI 64) — нижняя линия, G4 — вторая
- * линия (GLOSSARY: скрипичный ключ). Каждая позиция = один диатонический
- * шаг; альтерированные ноты (♯/♭) стоят на позиции своей натуральной
- * буквы — в v1 азбуки альтераций нет, но геометрия уже корректна.
+ * промежутки. Ключ задаёт нижнюю линию (GLOSSARY: скрипичный ключ,
+ * басовый ключ): в скрипичном E4 (MIDI 64), в басовом G2 (MIDI 43);
+ * функции принимают clef с дефолтом «treble» — существующие вызовы
+ * не меняются. Каждая позиция = один диатонический шаг; альтерированные
+ * ноты стоят на позиции своей ПИСЬМЕННОЙ буквы (GLOSSARY: альтерация):
+ * ♯ и ♮ наследуют букву питча, ♭ — букву на полтона выше (writtenPitch).
  *
  * Все функции, работающие в пикселях, принимают staffSpace (межлинейное
  * расстояние, CSS-px) и staffTop (y верхней линии) явно — рендер
@@ -21,6 +23,12 @@ export type StaffDuration = "whole" | "half" | "quarter" | "eighth";
 /** Направление штиля (GLOSSARY: штиль). */
 export type StemDirection = "up" | "down";
 
+/** Ключ стана (GLOSSARY: скрипичный ключ, басовый ключ): «treble» 𝄞 / «bass» 𝄢. */
+export type ClefKind = "treble" | "bass";
+
+/** Знак альтерации (GLOSSARY: диез/бемоль/бекар): ♯ вверх, ♭ вниз, ♮ отмена. */
+export type AccidentalKind = "sharp" | "flat" | "natural";
+
 /** Число линий стана. */
 export const STAFF_LINE_COUNT = 5;
 /** Позиция нижней линии. */
@@ -31,6 +39,11 @@ export const MIDDLE_LINE_POS = 4;
 export const TOP_LINE_POS = 8;
 /** Скрипичный ключ ставится своей точкой отсчёта на линию G4 (SMuFL: baseline = referenced pitch). */
 export const CLEF_BASELINE_POS = 2;
+/** Басовый ключ — своей точкой отсчёта на четвёртую линию F3 (SMuFL fClef: baseline = referenced pitch). */
+export const F_CLEF_BASELINE_POS = 6;
+
+/** Кодпоинты ключей (SMuFL PUA, research 05 §1.1): ключ → глиф (Bravura cmap проверен). */
+export const CLEF_CODEPOINTS: Record<ClefKind, number> = { treble: 0xe050, bass: 0xe062 } as const;
 
 /** Позиция числителя размера: верхняя половина стана (цифра 0.5 em, центрирована на baseline). */
 export const TIMESIG_NUMERATOR_POS = 6;
@@ -54,6 +67,17 @@ export const THIN_BARLINE_THICKNESS_SPACES = 0.16;
 /** Кодпоинты флага восьмой (SMuFL PUA, research 05 §1.1): направление штиля → глиф. */
 export const FLAG_CODEPOINTS = { up: 0xe240, down: 0xe241 } as const;
 
+/**
+ * Кодпоинты знаков альтерации (SMuFL accidentalSharp/Flat/Natural): знак →
+ * глиф. Присутствие в Bravura проверено разбором cmap woff2
+ * (tmp-скрипт задачи PIANO-14): U+E262, U+E260, U+E261 — все есть.
+ */
+export const ACCIDENTAL_CODEPOINTS: Record<AccidentalKind, number> = {
+  sharp: 0xe262,
+  flat: 0xe260,
+  natural: 0xe261,
+} as const;
+
 /** Длительность в четвертных долях — для пропорциональной раскладки такта. */
 export const DURATION_BEATS: Record<StaffDuration, number> = {
   whole: 4,
@@ -68,45 +92,66 @@ const LETTER_BY_PITCH_CLASS: readonly number[] = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 
 const NATURAL_SEMITONES: readonly number[] = [0, 2, 4, 5, 7, 9, 11];
 /** Диатонический индекс нижней линии стана (E4): октава 4 × 7 + буква E(2) = 30. */
 const BOTTOM_LINE_DIATONIC = 30;
+/** Диатонический индекс нижней линии басового стана (G2): октава 2 × 7 + буква G(4) = 18. */
+const BOTTOM_LINE_DIATONIC_BASS = 18;
+
+/** Диатонический индекс нижней линии стана для ключа (скрипичный: E4, басовый: G2). */
+function bottomLineDiatonic(clef: ClefKind): number {
+  return clef === "bass" ? BOTTOM_LINE_DIATONIC_BASS : BOTTOM_LINE_DIATONIC;
+}
 
 /**
  * Позиция ноты на стане (в полпробела от нижней линии) для питча MIDI.
- * E4 → 0 (нижняя линия), G4 → 2, B4 → 4 (средняя), F5 → 8 (верхняя),
- * C4 → −2 (первая добавочная линейка снизу).
+ * Скрипичный: E4 → 0 (нижняя линия), G4 → 2, B4 → 4 (средняя), F5 → 8
+ * (верхняя), C4 → −2 (первая добавочная линейка снизу).
+ * Басовый: G2 → 0, F3 → 6 (линия ключа), A3 → 8 (верхняя), C4 → 10
+ * (первая добавочная сверху).
  */
-export function pitchToStaffPos(pitch: number): number {
+export function pitchToStaffPos(pitch: number, clef: ClefKind = "treble"): number {
   const octave = Math.floor(pitch / 12) - 1;
   const letter = LETTER_BY_PITCH_CLASS[((pitch % 12) + 12) % 12];
-  return octave * 7 + letter - BOTTOM_LINE_DIATONIC;
+  return octave * 7 + letter - bottomLineDiatonic(clef);
+}
+
+/**
+ * Питч ПИСЬМЕННОЙ позиции ноты (GLOSSARY: альтерация): ♯ и ♮ пишутся на
+ * позиции своей натуральной буквы (сама нота — диезы схлопываются в букву
+ * уже в pitchToStaffPos), ♭ — на позиции буквы НА ПОЛТОНА ВЫШЕ: D♭4 звучит
+ * 61, но пишется на D4 (62). Позиция на стане — pitchToStaffPos от этого
+ * питча; y, штиль и добавочные линейки ноты считаются от него же.
+ */
+export function writtenPitch(pitch: number, accidental: AccidentalKind | null | undefined): number {
+  return accidental === "flat" ? pitch + 1 : pitch;
 }
 
 /** Обратно: натуральный питч (MIDI) позиции на стане. Диезы схлопываются в натуральную букву. */
-export function staffPosToPitch(pos: number): number {
-  const diatonic = pos + BOTTOM_LINE_DIATONIC;
+export function staffPosToPitch(pos: number, clef: ClefKind = "treble"): number {
+  const diatonic = pos + bottomLineDiatonic(clef);
   const octave = Math.floor(diatonic / 7);
   const letter = diatonic - octave * 7;
   return (octave + 1) * 12 + (NATURAL_SEMITONES[letter] ?? 0);
 }
 
 /** y-координата ноты: baseline глифа головки (SMuFL регистрирует головку центром на baseline). */
-export function pitchToY(pitch: number, staffTop: number, staffSpace: number): number {
-  return staffTop + (TOP_LINE_POS - pitchToStaffPos(pitch)) * (staffSpace / 2);
+export function pitchToY(pitch: number, staffTop: number, staffSpace: number, clef: ClefKind = "treble"): number {
+  return staffTop + (TOP_LINE_POS - pitchToStaffPos(pitch, clef)) * (staffSpace / 2);
 }
 
 /** Обратно (для кликов по стану, очередь 2): округляет к ближайшей линии/промежутку. */
-export function yToPitch(y: number, staffTop: number, staffSpace: number): number {
+export function yToPitch(y: number, staffTop: number, staffSpace: number, clef: ClefKind = "treble"): number {
   const bottomY = staffTop + (TOP_LINE_POS * staffSpace) / 2;
   const pos = Math.round((bottomY - y) / (staffSpace / 2));
-  return staffPosToPitch(pos);
+  return staffPosToPitch(pos, clef);
 }
 
 /**
  * Направление штиля (практика Gould/MuseScore, research 05 §5): на средней
- * линии и выше — вниз, ниже — вверх. Сравнение по позиции на стане, чтобы
- * альтерированные ноты наследовали направление своей буквы.
+ * линии и выше — вниз, ниже — вверх. Сравнение по позиции на стане (для
+ * ключа карточки), чтобы альтерированные ноты наследовали направление
+ * своей буквы.
  */
-export function stemDirection(pitch: number): StemDirection {
-  return pitchToStaffPos(pitch) >= MIDDLE_LINE_POS ? "down" : "up";
+export function stemDirection(pitch: number, clef: ClefKind = "treble"): StemDirection {
+  return pitchToStaffPos(pitch, clef) >= MIDDLE_LINE_POS ? "down" : "up";
 }
 
 /** Длина штиля в px: 3.5 межлинейных (октава) — Gould/MuseScore. */
@@ -115,10 +160,10 @@ export function stemLengthPx(staffSpace: number): number {
 }
 
 /** y кончика штиля (там же точка посадки флага восьмой). */
-export function stemTipY(pitch: number, staffTop: number, staffSpace: number): number {
-  const y = pitchToY(pitch, staffTop, staffSpace);
+export function stemTipY(pitch: number, staffTop: number, staffSpace: number, clef: ClefKind = "treble"): number {
+  const y = pitchToY(pitch, staffTop, staffSpace, clef);
   const len = stemLengthPx(staffSpace);
-  return stemDirection(pitch) === "up" ? y - len : y + len;
+  return stemDirection(pitch, clef) === "up" ? y - len : y + len;
 }
 
 /**
@@ -142,8 +187,8 @@ export function ledgerPositions(pos: number): number[] {
 }
 
 /** y-координаты добавочных линеек ноты (короткие, через головку — рисует рендер). */
-export function ledgerLineYs(pitch: number, staffTop: number, staffSpace: number): number[] {
-  return ledgerPositions(pitchToStaffPos(pitch)).map((pos) => staffTop + (TOP_LINE_POS - pos) * (staffSpace / 2));
+export function ledgerLineYs(pitch: number, staffTop: number, staffSpace: number, clef: ClefKind = "treble"): number[] {
+  return ledgerPositions(pitchToStaffPos(pitch, clef)).map((pos) => staffTop + (TOP_LINE_POS - pos) * (staffSpace / 2));
 }
 
 /**

@@ -6,7 +6,11 @@
  * Плюс раздел «Гитара» (research 06): реестр GUITAR_LESSONS (структура,
  * пулы в словаре I позиции), звук показа cardSoundPitch (soundingMidi),
  * диаграмма fretboardHighlight (словарь + явная подсказка B4=3.IV), гейты
- * гитарной цепочки guitar-1..6 (независимой от нотной).
+ * гитарной цепочки guitar-1..6 (независимой от нотной). И уроки басового
+ * ключа 7–9 (PIANO-13): clef-карточки, пулы G2–B3 / C3–B3, пары «одна нота —
+ * два ключа», позиционные имена, гейты 6→7→8→9. И уроки альтерации 10–11
+ * (PIANO-14): пулы ♯/♭, бекар-пары «♯/♭ → ♮», письменная позиция ♭,
+ * энгармонизм D♭4 = клавиша C♯4, гейты 9→10→11.
  * Запуск: npm run smoke:primer.
  *
  * Рандомизация генераторов — детерминированная rng-функция (mulberry32):
@@ -14,9 +18,10 @@
  * node не тестируется — нужен живой браузер.
  */
 import { PrimerEngine } from "../src/primer/engine";
-import { LESSONS } from "../src/primer/lessons";
+import { LESSONS, staffPositionName } from "../src/primer/lessons";
 import { cardSoundPitch, fretboardHighlight, GUITAR_LESSONS } from "../src/primer/guitar-lessons";
 import { PrimerProgressStore } from "../src/primer/progress";
+import { isBlackPitch } from "../src/core/layout";
 import {
   FIRST_POSITION_WRITTEN_HIGH,
   FIRST_POSITION_WRITTEN_LOW,
@@ -35,7 +40,7 @@ import {
   type PrimerStorage,
   type StaffNote,
 } from "../src/primer/types";
-import { DURATION_BEATS } from "../src/notation/geometry";
+import { DURATION_BEATS, pitchToStaffPos, writtenPitch } from "../src/notation/geometry";
 
 let checks = 0;
 function assert(condition: boolean, message: string): void {
@@ -44,6 +49,9 @@ function assert(condition: boolean, message: string): void {
 }
 function assertEqual<T>(actual: T, expected: T, message: string): void {
   assert(actual === expected, `${message} (ожидалось ${String(expected)}, получено ${String(actual)})}`);
+}
+function assertNotEqual<T>(actual: T, unexpected: T, message: string): void {
+  assert(actual !== unexpected, `${message} (не должно быть ${String(unexpected)})}`);
 }
 
 // --- Детерминированный rng (одинаковый seed → одинаковые карточки) ---
@@ -105,7 +113,7 @@ function engineFor(lessonIndex: number, seed: number): PrimerEngine {
 
 function testLessonsData(): void {
   console.log("Данные уроков:");
-  assertEqual(LESSONS.length, 6, "шесть уроков v1 (SPEC §4.9)");
+  assertEqual(LESSONS.length, 11, "одиннадцать уроков: 6 (SPEC §4.9 v1) + 3 басовых (PIANO-13) + 2 альтерации (PIANO-14)");
   LESSONS.forEach((lesson, i) => {
     assertEqual(lesson.order, i + 1, `урок ${lesson.id} — порядковый номер ${i + 1}`);
     const cards = lesson.generate(mulberry32(100 + i));
@@ -117,7 +125,10 @@ function testLessonsData(): void {
       assert(card.prompt.length > 0 && card.explanation.length > 0, `урок ${lesson.id}: текст карточки не пустой`);
       const answer = card.answer;
       if (answer?.type === "pitch") {
-        assert(answer.pitch >= 60 && answer.pitch <= 83, `урок ${lesson.id}: питч ${answer.pitch} в маппинге C4–B5`);
+        assert(
+          answer.pitch >= 43 && answer.pitch <= 83,
+          `урок ${lesson.id}: питч ${answer.pitch} достижим маппингом с октавным сдвигом (G2–B6 при Z ≤ 2)`,
+        );
         assert(answer.pitch % 1 === 0, "питч целый");
       } else if (answer?.type === "choice") {
         assert(answer.options.length === 4, `урок ${lesson.id}: выбор из 4 кнопок`);
@@ -134,7 +145,7 @@ function testLessonsData(): void {
   const a = LESSONS[1]?.generate(mulberry32(7)).map((c) => c.prompt) ?? [];
   const b = LESSONS[1]?.generate(mulberry32(7)).map((c) => c.prompt) ?? [];
   assertEqual(a.join("|"), b.join("|"), "одинаковый seed → одинаковая серия");
-  console.log("  OK: 6 уроков, состав серий, границы питчей/кнопок, детерминизм");
+  console.log("  OK: 9 уроков, состав серий, границы питчей/кнопок, детерминизм");
 }
 
 // --- 2. Вердикты NameTheNote: верный/неверный питч, стрик, подсветка ---
@@ -395,7 +406,7 @@ function testProgressStore(): void {
       );
     }
   }
-  console.log("  OK: пороги, best=max, версионирование, битый JSON, вся цепочка 6 уроков");
+  console.log("  OK: пороги, best=max, версионирование, битый JSON, вся цепочка 11 уроков");
 }
 
 // --- 7. Раздел «Гитара» (research 06): структура уроков и словарь I позиции ---
@@ -626,6 +637,285 @@ function testGuitarEngineAndGates(): void {
   console.log("  OK: серии проходятся, вердикт выбора, гейты guitar-1..6 независимы от нотных");
 }
 
+// --- 12. Басовый ключ (PIANO-13): уроки 7–9 — clef-карточки, пулы, пары ключей ---
+
+function testBassClefLessons(): void {
+  console.log("Уроки басового ключа (PIANO-13):");
+  const bassClef = LESSONS[6] as (typeof LESSONS)[number];
+  const smallOctave = LESSONS[7] as (typeof LESSONS)[number];
+  const bothClefs = LESSONS[8] as (typeof LESSONS)[number];
+
+  // Реестр: номера 7–9 подряд, нотная секция (как уроки 1–6, не «Гитара»).
+  assertEqual(LESSONS.length, 11, "одиннадцать нотных уроков");
+  assertEqual([bassClef.id, smallOctave.id, bothClefs.id].join(","), "bass-clef,octave-3,both-clefs", "ids по порядку");
+  assertEqual([bassClef.order, smallOctave.order, bothClefs.order].join(","), "7,8,9", "номера 7–9 подряд");
+  assert(bassClef.section === undefined && smallOctave.section === undefined && bothClefs.section === undefined, "уроки 7–9 — нотная секция");
+
+  // Урок 7 «Басовый ключ»: 2 факта + 9 ответных, все карточки clef="bass".
+  const l7 = bassClef.generate(mulberry32(700));
+  const answerable7 = l7.filter((card) => card.answer !== null);
+  assertEqual(answerable7.length, 9, "урок 7: 9 ответных карточек (весь пул за один заход)");
+  assertEqual(l7.length, 11, "урок 7: 2 факта + 9 ответных");
+  const asked7 = new Set<number>();
+  for (const card of l7) {
+    assertEqual(card.clef, "bass", `урок 7 «${card.prompt}»: карточка в басовом ключе`);
+    const note = staffNote(card);
+    if (note) asked7.add(note.pitch);
+    const answer = card.answer;
+    if (answer?.type === "pitch") {
+      assert(answer.pitch >= 43 && answer.pitch <= 59, `урок 7: ответ ${answer.pitch} внутри G2–B3`);
+      asked7.add(answer.pitch);
+    }
+  }
+  assertEqual(
+    [...asked7].sort((a, b) => a - b).join(","),
+    "43,47,48,50,52,53,55,57,59",
+    "урок 7 спросил весь пул: G2 B2 C3 D3 E3 F3 G3 A3 B3 (линии G2 B2 D3 F3 A3, промежутки C3 E3 G3, над станом B3)",
+  );
+  assert((l7[0]?.explanation ?? "").includes("четвёртую линию"), "факт 7: точки ключа охватывают четвёртую линию");
+  assert((l7[0]?.explanation ?? "").includes("F3"), "факт 7: на четвёртой линии F3");
+  assert((l7[0]?.explanation ?? "").includes("левой руки"), "факт 7: басовый ключ — для левой руки");
+  assert((l7[1]?.explanation ?? "").includes("Z"), "факт 7: объясняет октавный сдвиг Z");
+
+  // Урок 8 «Малая октава»: все ответы внутри C3–B3; за 30 seed'ов спрошены все 7 натуральных.
+  const shown8 = new Set<number>();
+  for (let seed = 1; seed <= 30; seed += 1) {
+    for (const card of smallOctave.generate(mulberry32(seed))) {
+      assertEqual(card.clef, "bass", `урок 8 «${card.prompt}»: карточка в басовом ключе`);
+      const answer = card.answer;
+      if (answer?.type === "pitch") {
+        assert(answer.pitch >= 48 && answer.pitch <= 59, `урок 8: ответ ${answer.pitch} внутри малой октавы C3–B3`);
+        shown8.add(answer.pitch);
+      }
+    }
+  }
+  assertEqual(
+    [...shown8].sort((a, b) => a - b).join(","),
+    "48,50,52,53,55,57,59",
+    "урок 8 за 30 seed'ов спросил всю малую октаву C3 B3 (7 натуральных)",
+  );
+  const l8 = smallOctave.generate(mulberry32(800));
+  assert((l8[1]?.explanation ?? "").includes("Tab"), "факт 8: связь с клавиатурой — Tab становится C3");
+  assert((l8[1]?.explanation ?? "").includes("Z"), "факт 8: объясняет сдвиг Z");
+
+  // Урок 9 «Оба ключа»: пары одной ноты подряд — скрипичный и басовый, оба ключа в серии.
+  const l9 = bothClefs.generate(mulberry32(900));
+  assertEqual(l9.length, 12, "урок 9: 2 факта + 10 ответных (5 нот × 2 ключа)");
+  for (let i = 2; i < l9.length; i += 2) {
+    const first = l9[i];
+    const second = l9[i + 1] as PrimerCard;
+    const pitch1 = first?.answer?.type === "pitch" ? first.answer.pitch : -1;
+    const pitch2 = second?.answer?.type === "pitch" ? second.answer.pitch : -1;
+    assertEqual(pitch1, pitch2, `пара ${i / 2}: одна нота в двух карточках`);
+    assertNotEqual(first?.clef, second?.clef, `пара ${i / 2}: ключи разные`);
+    assert(first?.clef === "treble" || first?.clef === "bass", "clef пары — treble или bass");
+    assert(pitch1 === 55 || pitch1 === 59 || pitch1 === 60 || pitch1 === 62 || pitch1 === 64, `пара: нота ${pitch1} из пула G3 B3 C4 D4 E4`);
+  }
+  const clefs9 = new Set(l9.filter((c) => c.answer !== null).map((c) => c.clef));
+  assert(clefs9.has("treble") && clefs9.has("bass"), "урок 9: и скрипичный, и басовый ключи в ответных карточках");
+  assert((l9[1]?.explanation ?? "").includes("средняя до"), "факт 9: C4 — «средняя до», граница ключей");
+  assert((l9[1]?.explanation ?? "").includes("сверху"), "факт 9: в басовом C4 — добавочная сверху");
+
+  // Позиционные имена (справка карточек) — включая обрамлённые промежутки
+  // (латентный баг «undefined добавочная» на B5/D4 устранён).
+  assertEqual(staffPositionName(3), "второй промежуток", "C3 в басовом — второй промежуток");
+  assertEqual(staffPositionName(6), "четвёртая линия", "F3 в басовом — четвёртая линия");
+  assertEqual(staffPositionName(9), "промежуток над станом", "B3 в басовом");
+  assertEqual(staffPositionName(10), "первая добавочная линейка сверху", "C4 в басовом");
+  assertEqual(staffPositionName(11), "промежуток над первой добавочной сверху", "D4 в басовом");
+  assertEqual(staffPositionName(-2), "первая добавочная линейка снизу", "C4 в скрипичном");
+  assertEqual(staffPositionName(-3), "промежуток под первой добавочной снизу", "B3 в скрипичном");
+  assertEqual(staffPositionName(-5), "промежуток под второй добавочной снизу", "G3 в скрипичном");
+  assertEqual(staffPositionName(11), "промежуток над первой добавочной сверху", "B5 в скрипичном (урок 3)");
+
+  // Ни одно объяснение всех уроков не содержит «undefined» (20 seed'ов на урок).
+  for (const lesson of LESSONS) {
+    for (let seed = 1; seed <= 20; seed += 1) {
+      for (const card of lesson.generate(mulberry32(seed))) {
+        assert(!card.explanation.includes("undefined"), `урок ${lesson.id} (seed ${seed}): справка без «undefined»`);
+        assert(!card.prompt.includes("undefined"), `урок ${lesson.id} (seed ${seed}): вопрос без «undefined»`);
+      }
+    }
+  }
+
+  // Движок: серии 7–9 проходятся на 100% (ответ клавишей; факты листаются).
+  for (const lesson of [bassClef, smallOctave, bothClefs]) {
+    const engine = new PrimerEngine(mulberry32(710 + lesson.order));
+    engine.start(lesson);
+    const result = runLesson(engine, () => true);
+    assertEqual(result.percent, 100, `${lesson.id}: серия проходится на 100%`);
+    assertEqual(result.passed, true, `${lesson.id}: пройден`);
+    assertEqual(result.lessonId, lesson.id, `${lesson.id}: итог с правильным id`);
+  }
+
+  // Гейты нотной цепочки: 6 → 7 → 8 → 9; гитарный прогресс и соседние уроки не мешают.
+  const store = new PrimerProgressStore(memoryStorage());
+  assertEqual(store.isUnlocked(bassClef, LESSONS), false, "урок 7 закрыт без прогресса");
+  store.recordResult({ lessonId: "measures", percent: 100, correct: 5, total: 5, bestStreak: 5, passed: true });
+  assertEqual(store.isUnlocked(bassClef, LESSONS), true, "урок 6 ≥80% → урок 7 открыт");
+  assertEqual(store.isUnlocked(smallOctave, LESSONS), false, "урок 8 ждёт урок 7");
+  store.recordResult({ lessonId: bassClef.id, percent: 100, correct: 9, total: 9, bestStreak: 9, passed: true });
+  assertEqual(store.isUnlocked(smallOctave, LESSONS), true, "урок 7 ≥80% → урок 8 открыт");
+  assertEqual(store.isUnlocked(bothClefs, LESSONS), false, "урок 9 ждёт урок 8");
+  store.recordResult({ lessonId: smallOctave.id, percent: 83, correct: 6, total: 7, bestStreak: 6, passed: true });
+  assertEqual(store.isUnlocked(bothClefs, LESSONS), true, "урок 8 83% ≥80% → урок 9 открыт");
+  assertEqual(store.isUnlocked(bassClef, GUITAR_LESSONS), false, "гитарная серия не открывает нотные уроки");
+  console.log("  OK: уроки 7–9, clef=bass, пулы G2–B3/C3–B3, пары «одна нота — два ключа», гейты 6→7→8→9");
+}
+
+// --- 13. Альтерация (PIANO-14): уроки 10–11 — пулы ♯/♭, бекар-пары, гейты 9→10→11 ---
+
+function testAlterationLessons(): void {
+  console.log("Уроки альтерации (PIANO-14):");
+  const sharps = LESSONS[9] as (typeof LESSONS)[number];
+  const flats = LESSONS[10] as (typeof LESSONS)[number];
+
+  // Реестр: 11 нотных уроков, номера 10–11 подряд, нотная секция.
+  assertEqual([sharps.id, flats.id].join(","), "sharps,flats-naturals", "ids уроков 10–11 по порядку");
+  assertEqual([sharps.order, flats.order].join(","), "10,11", "номера 10–11 подряд");
+  assert(sharps.section === undefined && flats.section === undefined, "уроки 10–11 — нотная секция");
+
+  // Урок 10 «Диезы»: 2 факта + 5 ответных (весь пул ♯ за один заход).
+  const l10 = sharps.generate(mulberry32(1000));
+  assertEqual(l10.length, 7, "урок 10: 2 факта + 5 ответных");
+  const answerable10 = l10.filter((card) => card.answer !== null);
+  assertEqual(answerable10.length, 5, "урок 10: 5 ответных карточек");
+  assert((l10[0]?.explanation ?? "").includes("полтона"), "факт 10: диез — полтона вверх");
+  assert((l10[0]?.explanation ?? "").includes("чёрной клавишей"), "факт 10: диез звучит чёрной клавишей");
+  assert((l10[1]?.explanation ?? "").includes("1 2 4 5 6"), "факт 10: чёрные клавиши — ряд 1 2 4 5 6");
+  let playedSharpCards = 0;
+  for (const card of answerable10) {
+    const answer = card.answer;
+    assert(answer?.type === "pitch", "урок 10: ответ клавишей");
+    if (answer?.type !== "pitch") continue;
+    assert([61, 63, 66, 68, 70].includes(answer.pitch), `урок 10: ответ ${answer.pitch} из пула C♯4 D♯4 F♯4 G♯4 A♯4`);
+    assert(isBlackPitch(answer.pitch), `урок 10: ответ ${answer.pitch} — чёрная клавиша`);
+    const note = staffNote(card);
+    if (note) {
+      assertEqual(note.accidental, "sharp", `урок 10 «${card.prompt}»: знак ♯ у ноты на стане`);
+      assertEqual(writtenPitch(note.pitch, note.accidental), note.pitch, "диез пишется на букве своего питча");
+    } else {
+      playedSharpCards += 1;
+      // «Сыграй»-карточка: стан пуст — верная нота после вердикта дорисовывается со ♯.
+      assertEqual(card.answerAccidental, "sharp", "урок 10: «сыграй» — подсветка верной ноты со знаком ♯");
+    }
+  }
+  assert(playedSharpCards >= 2, "урок 10: есть «сыграй»-карточки");
+  const asked10 = new Set<number>();
+  for (let seed = 1; seed <= 30; seed += 1) {
+    for (const card of sharps.generate(mulberry32(seed))) {
+      const answer = card.answer;
+      if (answer?.type === "pitch") asked10.add(answer.pitch);
+    }
+  }
+  assertEqual([...asked10].sort((a, b) => a - b).join(","), "61,63,66,68,70", "урок 10 за 30 seed'ов спросил весь пул ♯");
+
+  // Урок 11 «Бемоли и бекары»: 3 факта + 4 ♭-карточки + 3 пары «♯/♭ → ♮».
+  const l11 = flats.generate(mulberry32(1100));
+  assertEqual(l11.length, 10, "урок 11: 3 факта + 7 ответных");
+  const answerable11 = l11.filter((card) => card.answer !== null);
+  assertEqual(answerable11.length, 7, "урок 11: 4 ♭-карточки + 3 бекар-пары");
+  assert((l11[0]?.explanation ?? "").includes("полтона"), "факт 11: бемоль — полтона вниз");
+  assert((l11[1]?.explanation ?? "").includes("энгармонизм"), "факт 11: энгармонизм назван");
+  assert((l11[2]?.explanation ?? "").includes("отменяет"), "факт 11: бекар отменяет альтерацию");
+  let flatCards = 0;
+  let pairCards = 0;
+  for (const card of answerable11) {
+    const answer = card.answer;
+    assert(answer?.type === "pitch", "урок 11: ответ клавишей");
+    if (answer?.type !== "pitch") continue;
+    const notes = card.staff.filter((item): item is StaffNote => item.kind === "note");
+    if (notes.length === 1) {
+      // ♭-карточка: письменная буква — на полтона выше звучания (D♭4 = 61 → D4).
+      flatCards += 1;
+      const note = notes[0] as StaffNote;
+      assertEqual(note.accidental, "flat", "урок 11: ♭-карточка со знаком бемоль");
+      assertEqual(writtenPitch(note.pitch, note.accidental), note.pitch + 1, "♭ пишется буквой на полтона выше звучания");
+      assertEqual(answer.pitch, note.pitch, "ответ ♭-карточки = звучание показанной ноты");
+      assert([61, 63, 68, 70].includes(answer.pitch), `урок 11: ответ ${answer.pitch} из пула D♭4 E♭4 A♭4 B♭4`);
+      assert(isBlackPitch(answer.pitch), `урок 11: ответ ${answer.pitch} — чёрная клавиша`);
+    } else {
+      // Пара: первая со ♯/♭, вторая ♮ той же письменной буквы; ответ — вторая.
+      assertEqual(notes.length, 2, "бекар-пара — две ноты на стане");
+      pairCards += 1;
+      const first = notes[0] as StaffNote;
+      const second = notes[1] as StaffNote;
+      assert(first.accidental === "sharp" || first.accidental === "flat", "первая нота пары — со ♯ или ♭");
+      assertEqual(second.accidental, "natural", "вторая нота пары — с бекаром ♮");
+      assertEqual(answer.pitch, second.pitch, "ответ пары — нота со знаком бекар");
+      assert(
+        pitchToStaffPos(writtenPitch(first.pitch, first.accidental)) ===
+          pitchToStaffPos(writtenPitch(second.pitch, second.accidental)),
+        "обе ноты пары — на одной письменной букве",
+      );
+      assert(isBlackPitch(first.pitch) && !isBlackPitch(second.pitch), "♯/♭ — чёрная клавиша, ♮ — белая");
+    }
+  }
+  assert(flatCards >= 3 && pairCards >= 2, `урок 11: смешанный пул (${flatCards} ♭-карточек + ${pairCards} пар)`);
+
+  // Покрытие: за 30 seed'ов — все 4 бемоля и все 5 бекар-пар (пары считаем по
+  // первой ноте: у A♯4→A♮4 и A♭4→A♮4 ответ один — 69).
+  const seenFlat = new Set<number>();
+  const seenPair = new Set<string>();
+  const seenPairAnswers = new Set<number>();
+  for (let seed = 1; seed <= 30; seed += 1) {
+    for (const card of flats.generate(mulberry32(seed))) {
+      const answer = card.answer;
+      if (answer?.type !== "pitch") continue;
+      const notes = card.staff.filter((item): item is StaffNote => item.kind === "note");
+      if (notes.length === 1) seenFlat.add(answer.pitch);
+      else if (notes.length === 2) {
+        const first = notes[0] as StaffNote;
+        seenPair.add(`${first.pitch}:${first.accidental ?? ""}`);
+        seenPairAnswers.add(answer.pitch);
+      }
+    }
+  }
+  assertEqual([...seenFlat].sort((a, b) => a - b).join(","), "61,63,68,70", "урок 11 за 30 seed'ов спросил все бемоли D♭4 E♭4 A♭4 B♭4");
+  assertEqual(seenPair.size, 5, `урок 11 за 30 seed'ов спросил все 5 бекар-пар (спрошено ${seenPair.size})`);
+  assertEqual(
+    [...seenPairAnswers].sort((a, b) => a - b).join(","),
+    "60,62,65,69",
+    "бекар-пары отвечают C4 D4 F4 A4 (белые клавиши)",
+  );
+
+  // Энгармонизм в справке ♭-карточки: D♭4 звучит клавишей C♯4 (MIDI 61).
+  let flat61: PrimerCard | null = null;
+  for (let seed = 1; seed <= 30 && flat61 === null; seed += 1) {
+    for (const card of flats.generate(mulberry32(seed))) {
+      const notes = card.staff.filter((item): item is StaffNote => item.kind === "note");
+      const answer = card.answer;
+      if (notes.length === 1 && answer?.type === "pitch" && answer.pitch === 61) {
+        flat61 = card;
+        break;
+      }
+    }
+  }
+  assert(flat61 !== null, "урок 11: D♭4-карточка найдена");
+  assert((flat61?.explanation ?? "").includes("C#4"), "D♭4: справка называет ту же клавишу C♯4 (энгармонизм)");
+
+  // Движок: серии проходятся на 100% (ответ клавишей; факты листаются).
+  for (const lesson of [sharps, flats]) {
+    const engine = new PrimerEngine(mulberry32(1200 + lesson.order));
+    engine.start(lesson);
+    const result = runLesson(engine, () => true);
+    assertEqual(result.percent, 100, `${lesson.id}: серия проходится на 100%`);
+    assertEqual(result.passed, true, `${lesson.id}: пройден`);
+    assertEqual(result.lessonId, lesson.id, `${lesson.id}: итог с правильным id`);
+  }
+
+  // Гейты нотной цепочки: 9 → 10 → 11; гитарный прогресс не мешает.
+  const store = new PrimerProgressStore(memoryStorage());
+  assertEqual(store.isUnlocked(sharps, LESSONS), false, "урок 10 закрыт без прогресса");
+  store.recordResult({ lessonId: "both-clefs", percent: 100, correct: 10, total: 10, bestStreak: 10, passed: true });
+  assertEqual(store.isUnlocked(sharps, LESSONS), true, "урок 9 ≥80% → урок 10 открыт");
+  assertEqual(store.isUnlocked(flats, LESSONS), false, "урок 11 ждёт урок 10");
+  store.recordResult({ lessonId: sharps.id, percent: 80, correct: 4, total: 5, bestStreak: 4, passed: true });
+  assertEqual(store.isUnlocked(flats, LESSONS), true, "урок 10 80% ≥ порога → урок 11 открыт");
+  assertEqual(store.isUnlocked(sharps, GUITAR_LESSONS), false, "гитарная серия не открывает нотные уроки");
+  console.log("  OK: уроки 10–11, пулы ♯ (5) и ♭ (4), бекар-пары на одной букве, энгармонизм 61, гейты 9→10→11");
+}
+
 function main(): void {
   testLessonsData();
   testNameTheNoteVerdicts();
@@ -638,6 +928,8 @@ function main(): void {
   testGuitarFretboardHints();
   testGuitarSound();
   testGuitarEngineAndGates();
+  testBassClefLessons();
+  testAlterationLessons();
   console.log(`SMOKE OK: ${checks} проверок пройдено`);
 }
 
